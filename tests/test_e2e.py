@@ -13,14 +13,22 @@ docker-compose.ymlでGatewayコンテナ（DinD環境）を起動し、
 2. ルーティング経由でLambda呼び出し（/api/s3/test）
 """
 import pytest
+import warnings
+import os
 import requests
 import time
+
+import urllib3
+
+# 自己署名証明書の警告を抑制
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from gateway.app.config import config
 
 # テスト用設定
-GATEWAY_URL = "http://localhost:8000"
+GATEWAY_URL = os.getenv("GATEWAY_URL", "http://localhost:8000")
 API_KEY = config.X_API_KEY
+VERIFY_SSL = False
 
 
 @pytest.fixture(scope="module")
@@ -28,13 +36,14 @@ def gateway_health():
     """Gatewayのヘルスチェック"""
     for i in range(10):
         try:
-            response = requests.get(f"{GATEWAY_URL}/health", timeout=5)
+            response = requests.get(f"{GATEWAY_URL}/health", timeout=5, verify=VERIFY_SSL)
             if response.status_code == 200:
                 return True
-        except Exception:
-            print(f"Waiting for Gateway... ({i+1}/10)")
+            print(f"Gateway returned status: {response.status_code}")
+        except Exception as e:
+            print(f"Waiting for Gateway... ({i+1}/10) Error: {e}")
             time.sleep(3)
-    pytest.skip("Gateway is not running. Start with: docker compose up -d gateway")
+    pytest.skip(f"Gateway is not running on {GATEWAY_URL}. Start with: docker compose up -d gateway")
 
 
 def get_auth_token() -> str:
@@ -47,7 +56,8 @@ def get_auth_token() -> str:
                 "PASSWORD": config.AUTH_PASS
             }
         },
-        headers={"x-api-key": API_KEY}
+        headers={"x-api-key": API_KEY},
+        verify=VERIFY_SSL
     )
     assert response.status_code == 200, f"Auth failed: {response.text}"
     return response.json()["AuthenticationResult"]["IdToken"]
@@ -58,7 +68,7 @@ class TestE2E:
     
     def test_health(self, gateway_health):
         """E2E: ヘルスチェック"""
-        response = requests.get(f"{GATEWAY_URL}/health")
+        response = requests.get(f"{GATEWAY_URL}/health", verify=VERIFY_SSL)
         assert response.status_code == 200
         assert response.json()["status"] == "healthy"
     
@@ -72,7 +82,8 @@ class TestE2E:
         """E2E: 認証なし → 401"""
         response = requests.post(
             f"{GATEWAY_URL}/api/s3/test",
-            json={"action": "test"}
+            json={"action": "test"},
+            verify=VERIFY_SSL
         )
         assert response.status_code == 401
     
@@ -82,7 +93,8 @@ class TestE2E:
         response = requests.post(
             f"{GATEWAY_URL}/api/nonexistent",
             json={"action": "test"},
-            headers={"Authorization": f"Bearer {token}"}
+            headers={"Authorization": f"Bearer {token}"},
+            verify=VERIFY_SSL
         )
         assert response.status_code == 404
     
@@ -93,7 +105,8 @@ class TestE2E:
         response = requests.post(
             f"{GATEWAY_URL}/api/s3/test",
             json={"action": "test"},
-            headers={"Authorization": f"Bearer {token}"}
+            headers={"Authorization": f"Bearer {token}"},
+            verify=VERIFY_SSL
         )
         
         # Lambda RIEが起動していない場合は502になる可能性がある

@@ -29,15 +29,6 @@ for arg in "$@"; do
     esac
 done
 
-# ビルド実行
-if [ "$BUILD" = true ]; then
-    echo "[1/4] Building Gateway image..."
-    # 既存のlambdaイメージ作成もここで行うのが理想だが、今回はGatewayのみ
-    docker compose build gateway
-else
-    echo "[1/4] Skipping build (use --build to rebuild)"
-fi
-
 # SSL証明書の準備
 CERT_DIR="./certs"
 CERT_FILE="$CERT_DIR/server.crt"
@@ -60,15 +51,20 @@ else
     echo "Using existing SSL certificates in $CERT_DIR"
 fi
 
-# Gateway起動
-echo "[2/4] Starting Gateway container..."
-docker compose up -d gateway
+# ビルド・起動実行
+echo "[1/4] Starting DinD Root container (and building internal images)..."
+if [ "$BUILD" = true ]; then
+    docker compose -f docker-compose.dind.yml up -d --build
+else
+    docker compose -f docker-compose.dind.yml up -d
+fi
 
 # ヘルスチェック待機
-echo "[3/4] Waiting for Gateway to be ready..."
+echo "[2/4] Waiting for Gateway to be ready..."
 MAX_RETRIES=60
 for i in $(seq 1 $MAX_RETRIES); do
-    if curl -s http://localhost:8000/health > /dev/null; then
+    # HTTPヘルスチェック
+    if curl -s -f http://localhost:8000/health > /dev/null; then
         echo "Gateway is ready!"
         break
     fi
@@ -78,7 +74,7 @@ done
 
 if [ $i -eq $MAX_RETRIES ]; then
     echo "Error: Gateway failed to start within timeout."
-    docker compose logs gateway
+    docker compose logs onpre-app
     exit 1
 fi
 

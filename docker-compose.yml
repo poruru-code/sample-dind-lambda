@@ -1,47 +1,140 @@
-# 【A】ホストOSで実行するComposeファイル（Gatewayコンテナを起動）
-# 本番環境ではこのファイルを使用してGatewayコンテナを起動する
+# Docker Composeファイル
+# 開発用: docker compose up -d
+# DinD内部: docker compose up -d (親コンテナが ./data を /app/data にマウントするため相対パスで動作)
 
 services:
   # ============================================
-  # Gatewayコンテナ（DinD環境）
+  # Permission Helper (統合)
   # ============================================
-  gateway:
-    build:
-      context: .
-      dockerfile: gateway/Dockerfile
-    container_name: onpre-gateway
-    privileged: true  # DinDに必要
-    ports:
-      - "8000:8000"    # Lambda Gateway API
-      - "9000:9000"    # RustFS S3互換API (内部から転送)
-      - "9001:9001"    # RustFS 管理コンソール (内部から転送)
-      - "8001:8000"    # ScyllaDB Alternator (内部から転送)
-      - "9428:9428"    # VictoriaLogs Web UI
+  permission-helper:
+    image: alpine
+    container_name: onpre-permission-helper
     volumes:
-      # データ永続化（ホストOS → Gatewayコンテナ → 子コンテナ）
-      - ./data:/data
-      # ログ集約
-      - ./logs:/logs
-      # SSL証明書（ホストから共有、または自動生成先）
-      - ./certs:/app/config/ssl
+      - ./data/s3_storage:/data/s3_storage
+      - ./data/scylladb:/data/scylladb
+    command: >
+      sh -c "
+        chown -R 10001:10001 /data/s3_storage && echo 'RustFS permissions fixed' &&
+        chmod -R 777 /data/scylladb && echo 'ScyllaDB permissions fixed'
+      "
+    restart: "no"
+
+  # ============================================
+  # RustFS (S3 Compatible Storage)
+  # ============================================
+  s3-storage:
+    image: rustfs/rustfs:latest
+    container_name: onpre-storage
+    depends_on:
+      permission-helper:
+        condition: service_completed_successfully
+    ports:
+      - "9000:9000"    # S3 API
+      - "9001:9001"    # Console
+    volumes:
+      - ./data/s3_storage:/data/rustfs
+      - ./config/lifecycle.yml:/app/config/lifecycle.yml:ro
     environment:
-      - JWT_SECRET_KEY=dev-secret-key-change-in-production
-      - X_API_KEY=dev-api-key-change-in-production
-      # RustFS設定 (内部コンテナへパススルー)
-      - RUSTFS_ACCESS_KEY=fsadmin
-      - RUSTFS_SECRET_KEY=fsadmin
-      # ローカル環境フラグ (Lambda Layerのログ出力先切り替え用)
-      - LOCAL_LAMBDA_ENV=true
-    networks:
-      - onpre_network
+      - RUSTFS_VOLUMES=/data/rustfs
+      - RUSTFS_ADDRESS=0.0.0.0:9000
+      - RUSTFS_ACCESS_KEY=${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      - RUSTFS_SECRET_KEY=${RUSTFS_SECRET_KEY:-rustfsadmin}
+      - RUSTFS_CONSOLE_ENABLE=true
+      - RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001
+      - RUSTFS_DEDUPLICATION=${RUSTFS_DEDUPLICATION:-true}
+      - RUSTFS_COMPRESSION=${RUSTFS_COMPRESSION:-auto}
+      - RUSTFS_LIFECYCLE_POLICY_PATH=/app/config/lifecycle.yml
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      test: ["CMD", "sh", "-c", "curl -f http://localhost:9000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ============================================
+  # ScyllaDB (DynamoDB Compatible DB)
+  # ============================================
+  database:
+    image: scylladb/scylla:latest
+    container_name: onpre-database
+    depends_on:
+      permission-helper:
+        condition: service_completed_successfully
+    ports:
+      - "8001:8000"    # Alternator API (Host 8001 -> Container 8000)
+    volumes:
+      - ./data/scylladb:/var/lib/scylla
+    command: --smp 1 --memory ${SCYLLADB_MEMORY:-1}G --developer-mode 1 --alternator-port 8000
+    healthcheck:
+      test: ["CMD-SHELL", "nodetool status"]
       interval: 30s
-      timeout: 10s
+      timeout: 20s
       retries: 3
     restart: unless-stopped
 
-networks:
-  onpre_network:
-    name: onpre-network
-    driver: bridge
+  # ============================================
+  # VictoriaLogs
+  # ============================================
+  victorialogs:
+    image: victoriametrics/victoria-logs:latest
+    container_name: victorialogs
+    ports:
+      - "9428:9428"    # VictoriaLogs UI/API
+    volumes:
+      - ./data/victorialogs:/victoria-logs-data
+    command:
+      - "-storageDataPath=/victoria-logs-data"
+      - "-retentionPeriod=7d"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9428/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # ============================================
+  # Gateway Application (FastAPI)
+  # ============================================
+  gateway:
+    image: my-gateway-api:latest
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile.app
+    container_name: onpre-gateway
+    ports:
+      - "8000:8000"    # Gateway API
+    environment:
+      - UVICORN_BIND_ADDR=0.0.0.0:8000
+      - SCYLLADB_HOST=onpre-database
+      - SCYLLADB_PORT=8000
+      - RUSTFS_ROOT_USER=${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      - RUSTFS_ROOT_PASSWORD=${RUSTFS_SECRET_KEY:-rustfsadmin}
+    depends_on:
+      - database
+      - s3-storage
+      - victorialogs
+    restart: unless-stopped
+
+  # ============================================
+  # Lambda Functions (Pre-loaded)
+  # ============================================
+  lambda-s3-test:
+    image: lambda-s3-test:latest
+    build:
+      context: ./lambda_functions/s3-test
+    container_name: lambda-s3-test
+    environment:
+      - S3_ENDPOINT=http://onpre-storage:9000
+      - RUSTFS_ROOT_USER=${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      - RUSTFS_ROOT_PASSWORD=${RUSTFS_SECRET_KEY:-rustfsadmin}
+    depends_on:
+      s3-storage:
+        condition: service_healthy
+    restart: unless-stopped
+
+  lambda-hello:
+    image: lambda-hello:latest
+    build:
+      context: ./lambda_functions/hello
+    container_name: lambda-hello
+    restart: unless-stopped

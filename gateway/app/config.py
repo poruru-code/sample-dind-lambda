@@ -37,6 +37,11 @@ class GatewayConfig(BaseModel):
         default=3600,
         description="JWTトークン有効期間(秒)"
     )
+    # App Settings
+    app_host: str = "0.0.0.0"
+    app_port: int = 8000
+    debug: bool = False
+    root_path: str = ""
     AUTH_USER: str = Field(
         default="onpremise-user",
         description="認証対象ユーザ名"
@@ -46,7 +51,7 @@ class GatewayConfig(BaseModel):
         description="認証対象パスワード"
     )
     AUTH_ENDPOINT_PATH: str = Field(
-        default="/padma/user/auth/ver1.0",
+        default="/user/auth/ver1.0",
         description="内部認証エンドポイントパス"
     )
     X_API_KEY: str = Field(

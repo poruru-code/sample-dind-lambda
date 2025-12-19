@@ -1,0 +1,25 @@
+# 【A】ホストOSで実行するComposeファイル（DinD親コンテナを起動）
+# 本番環境ではこのファイルを使用してDinD環境全体を起動する
+
+services:
+  # ============================================
+  # Root DinD Container
+  # ============================================
+  onpre-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: onpre-app-root
+    privileged: true  # DinDに必須
+    ports:
+      - "8000:8000"   # Gateway API
+      - "9000:9000"   # RustFS API
+      - "9001:9001"   # RustFS Console
+      - "9428:9428"   # VictoriaLogs
+      - "8001:8001"   # ScyllaDB Alternator
+    volumes:
+      # データ永続化（ホストOS -> 親コンテナ -> 子コンテナ）
+      - ./data:/app/data
+      # ログ集約
+      - ./logs:/logs
+    restart: unless-stopped

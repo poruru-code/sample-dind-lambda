@@ -1,147 +1,101 @@
-# DinD Lambda - Edge Serverless Simulator
+# Sample DinD Lambda Simulator
+Docker in Docker (DinD) 技術を活用した、オンプレミス環境向けのエッジサーバーレス・シミュレーターです。
 
-完全内包型のDocker in Docker (DinD) 環境を使用した、AWS API Gateway互換のエッジサーバーレスシミュレーターです。
-外部ネットワーク接続なしで、Lambda関数、S3互換ストレージ(RustFS)、DynamoDB互換DB(ScyllaDB)のローカル実行環境を提供します。
+## 特徴
+- **Pure DinD**: 1つの親コンテナ内に Gateway, Storage, DB, Lambda 等の全サービスを集約。
+- **Direct Access**: リバースプロキシを排し、各サービスへHTTPポートで直接アクセス可能。
+- **Hybrid Dev**: 開発用 (`docker-compose.yml`) と 本番用 (`docker-compose.dind.yml`) をシームレスに切り替え。
 
-## 🚀 クイックスタート
-
-開発環境には既に必要なツールが含まれています。以下のコマンドでビルドからテストまで一括実行できます。
-
-```bash
-# Gatewayのビルド、起動、E2Eテストを実行
-./tests/run_tests.sh --build --cleanup
-```
-
-## 🏗 アーキテクチャ
-
-FastAPI Gatewayが親コンテナとして動作し、Dockerソケットを通じて子コンテナ（Lambda RIE、ストレージ、DB）のライフサイクルを管理します。
+## アーキテクチャ
 
 ```mermaid
-graph TD
-    User[HTTP Client] -->|Request| GW[FastAPI Gateway]
+graph LR
+    Client
     
-    subgraph "Parent Container (DinD)"
-        GW -->|Auth check| GW
-        GW -->|Launch/Manage| Docker[Docker Engine]
-        
-        Docker -->|Run| Lambda[Lambda RIE Container]
-        Docker -->|Run| S3[RustFS (S3 Compatible)]
-        Docker -->|Run| DB[ScyllaDB (DynamoDB Compatible)]
-        
-        GW -->|Proxy Request| Lambda
-        Lambda -->|Access data| S3
-        Lambda -->|Access data| DB
+    subgraph "Docker Environment"
+        Gateway[:8000]
+        S3[:9000]
+        DB[:8001]
+        Logs[:9428]
     end
+    
+    Client --> Gateway
+    Client --> S3
+    Client --> DB
+    Client --> Logs
+    
+    Gateway -.->|Manage| Lambda((Lambda))
 ```
 
-## 🛠 開発環境セットアップ
+### 構成
+ホストOS、またはDinD親コンテナ上で以下のサービス群が動作します。
 
-### 前提条件
-- Docker
-- Python 3.11+
-- [uv](https://github.com/astral-sh/uv) (推奨パッケージマネージャー)
+| サービス           | ポート | 役割                         | URL                     |
+| ------------------ | ------ | ---------------------------- | ----------------------- |
+| **Gateway API**    | `8000` | Lambda関数管理・実行         | `http://localhost:8000` |
+| **RustFS API**     | `9000` | S3互換オブジェクトストレージ | `http://localhost:9000` |
+| **RustFS Console** | `9001` | S3管理 Web UI                | `http://localhost:9001` |
+| **ScyllaDB**       | `8001` | DynamoDB互換DB (Alternator)  | `http://localhost:8001` |
+| **VictoriaLogs**   | `9428` | ログ管理 Web UI              | `http://localhost:9428` |
 
-### セットアップ手順
-
-1. 依存関係のインストール
-   ```bash
-   uv venv
-   source .venv/bin/activate
-   uv pip install -e .[dev]
-   ```
-
-2. Gatewayの手動起動
-   ```bash
-   docker compose up -d gateway
-   ```
-   Gatewayは `http://localhost:8000` で起動します。
-
-## 📁 ディレクトリ構造
-
-```text
-/
-├── gateway/                # API Gateway アプリケーション (FastAPI)
-│   ├── app/                # アプリケーションコード
-│   ├── Dockerfile          # 親コンテナ定義 (DinD環境含む)
-│   └── entrypoint.sh       # 起動スクリプト
-│
-├── lambda_functions/       # Lambda関数ソースコード
-│
-├── compose-internal/       # 内部サービス定義 (RustFS, ScyllaDB等)
-│   └── docker-compose.internal.yml
-│
-├── tests/                  # テストコード
-│   ├── test_e2e.py         # 統合テスト
-│   └── run_tests.sh        # テストランナー
-│
-├── docs/                   # ドキュメント
-└── docker-compose.yml      # 開発用Gateway起動構成
+### ファイル構成
+```
+.
+├── docker-compose.yml       # [開発/内部用] サービス定義 (相対パス ./data)
+├── docker-compose.dind.yml  # [本番用] DinD親コンテナ起動 (マウント調整)
+├── Dockerfile              # DinD親コンテナのビルド定義
+├── entrypoint.sh           # 親コンテナ起動スクリプト
+├── gateway/                # FastAPIアプリケーション
+├── lambda_functions/       # ユーザー関数コード
+├── tests/                  # E2Eテスト
+└── docs/                   # 仕様書
 ```
 
-## 🧪 テスト
+## クイックスタート
 
-### E2Eテスト (HTTP → Gateway → Lambda)
-GatewayをDockerコンテナとして起動し、外部からHTTPリクエストを送って各種動作（ルーティング、認証、Lambda実行）を検証します。
-
+### 1. 開発モード (推奨)
+ホスト上のDockerで直接サービス群を起動します。開発の反復に最適です。
 ```bash
-# テストランナーを使用 (推奨)
-./tests/run_tests.sh --build
+# 起動
+docker compose up -d
 
-# 手動実行
-python -m pytest tests/test_e2e.py -v
+# 停止
+docker compose down
 ```
 
-## 💡 API使用例
-
-### 認証 (IDトークン取得)
+### 2. 本番/DinDモード
+商用環境を模した、単一コンテナ(DinD)内で全サービスを起動します。
 ```bash
-curl -X POST http://localhost:8000/user/auth/v1 \
+# 起動
+docker compose -f docker-compose.dind.yml up -d
+
+# ログ確認
+docker logs -f onpre-app-root
+```
+
+## 開発ガイド
+
+### テスト実行
+E2EテストはDinD環境を起動して実行されます。
+```bash
+./tests/run_tests.sh
+```
+※ `--build` オプションで再ビルド可能。
+
+### API利用例 (Gateway)
+
+**認証:**
+```bash
+curl -X POST http://localhost:8000/user/auth/ver1.0 \
   -H "x-api-key: dev-api-key-change-in-production" \
   -H "Content-Type: application/json" \
-  -d '{
-    "AuthParameters": {
-      "USERNAME": "testuser",
-      "PASSWORD": "testpass"
-    }
-  }'
+  -d '{"AuthParameters": {"USERNAME": "onpremise-user", "PASSWORD": "onpremise-pass"}}'
 ```
 
-### Lambda呼び出し
-```bash
-curl -X POST http://localhost:8000/api/s3/test \
-  -H "Authorization: Bearer <IdToken>" \
-  -d '{"action": "test"}'
-```
+**S3互換アクセス:**
+AWS SDK等からは `http://localhost:9000` をエンドポイントとして指定してください。
 
-## 📝 新しいLambda関数の追加
-
-1. `lambda_functions/` 配下に新しいディレクトリを作成し、コードとDockerfileを配置。
-2. `build/lambda-images/` ディレクトリにビルドしたイメージのtarボールを配置（またはGatewayビルドプロセスに追加）。
-3. Gateway起動時に自動的にイメージがロードされます。
-
-## ⚠️ トラブルシューティングと運用時の注意
-
-### 設定変更が反映されない場合
-
-RustFSの認証情報や内部設定を変更した際、単純な再起動では反映されない場合があります。その際は以下の手順を試してください。
-
-1.  **データの初期化 (データ削除)**:
-    RustFSなどのストレージ・DBサービスは、初回起動時のみ管理者ユーザーを作成します。設定を変更して反映させるには、既存データを削除する必要があります。
-    ```bash
-    docker compose down
-    sudo rm -rf ./data/s3_storage
-    ```
-
-2.  **コンテナの再ビルド**:
-    本環境はDinD構成のため、内部設定ファイルはGatewayイメージ内に含まれています。ファイルを修正した後はイメージの再ビルドが必要です。
-    ```bash
-    docker compose up -d --build
-    ```
-
-### 共通の解決コマンド
-困ったときは、以下の「全削除・再ビルド」を実行してください。
-```bash
-docker compose down
-sudo rm -rf ./data/*
-docker compose up -d --build
-```
+## 詳細ドキュメント
+- [システム仕様書](docs/spec.md)
+- [クライアント認証仕様](docs/client-auth-spec.md)
+- [ログ収集アダプター](docs/local-logging-adapter.md)

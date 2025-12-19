@@ -8,7 +8,7 @@
 
 ### 📌 エンドポイント仕様
 
-**パス:** `POST /user/auth/v1`
+**パス:** `POST /user/auth/ver1.0`
 
 **リクエストヘッダ:**
 - `x-api-key`: API GatewayのAPIキー
@@ -67,10 +67,10 @@ class AuthResponse(BaseModel):
 
 #### 4. **エラーハンドリング**
 
-| 条件 | ステータス | PADMA_USER_AUTHORIZEDヘッダー | エラー種別 |
-|:---|:---|:---|:---|
-| x-api-key不正/なし | 401 | なし | プロキシ認証エラー |
-| ユーザー名/パスワード不正 | 401 | あり | ユーザー認証エラー |
+| 条件                      | ステータス | PADMA_USER_AUTHORIZEDヘッダー | エラー種別         |
+| :------------------------ | :--------- | :---------------------------- | :----------------- |
+| x-api-key不正/なし        | 401        | なし                          | プロキシ認証エラー |
+| ユーザー名/パスワード不正 | 401        | あり                          | ユーザー認証エラー |
 
 ---
 
@@ -79,15 +79,17 @@ class AuthResponse(BaseModel):
 #### docker-compose.yml
 
 ```yaml
-environment:
-  - JWT_SECRET_KEY=dev-secret-key-change-in-production
-  - X_API_KEY=dev-api-key-change-in-production  # 追加
+    environment:
+      - JWT_SECRET_KEY=dev-secret-key-change-in-production
+      - X_API_KEY=dev-api-key-change-in-production
+      - AUTH_ENDPOINT_PATH=/user/auth/ver1.0
 ```
 
 #### 環境変数
 
 - `JWT_SECRET_KEY`: JWTトークンの署名キー
 - `X_API_KEY`: API Gatewayのアクセスキー
+- `AUTH_ENDPOINT_PATH`: 認証エンドポイントのパス (デフォルト: `/user/auth/ver1.0`)
 
 ---
 
@@ -96,7 +98,7 @@ environment:
 #### 認証リクエスト
 
 ```bash
-curl -X POST http://localhost:8000/user/auth/v1 \
+curl -X POST http://localhost:8000/user/auth/ver1.0 \
   -H "x-api-key: dev-api-key-change-in-production" \
   -H "Content-Type: application/json" \
   -d '{
@@ -134,7 +136,7 @@ curl -X POST http://localhost:8000/invoke/hello \
 
 ### ✅ 実装済み
 
-- [x] `/user/auth/v1` エンドポイント
+- [x] `/user/auth/ver1.0` エンドポイント
 - [x] `AuthParameters` リクエスト形式
 - [x] `AuthenticationResult.IdToken` レスポンス形式
 - [x] `x-api-key` ヘッダー検証
@@ -147,9 +149,3 @@ curl -X POST http://localhost:8000/invoke/hello \
 - [ ] 403 Forbidden対応
 - [ ] 503 Service Unavailable対応
 - [ ] IDトークンのキャッシュ機能（クライアント側で実装済み）
-
----
-
-## 互換性
-
-この実装により、Javaで実装された`UserAuthenticatExecutor`クライアントから正しく認証リクエストを受け付け、IDトークンを返却できるようになりました。

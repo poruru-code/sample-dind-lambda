@@ -33,8 +33,8 @@ docker images
 
 # 内部用Composeで子コンテナ（S3互換、DB、Lambda）を起動
 echo "Starting internal services (RustFS, ScyllaDB, Lambda)..."
-cd /app/compose-internal
-docker compose -f docker-compose.internal.yml up -d
+cd /app
+docker compose -f docker-compose.yml up -d
 
 # ヘルスチェック待機
 echo "Waiting for internal services to be healthy..."

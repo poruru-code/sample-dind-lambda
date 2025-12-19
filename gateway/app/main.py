@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
     load_routing_config()
     yield
 
-app = FastAPI(title="Lambda Gateway", version="2.0.0", lifespan=lifespan)
+app = FastAPI(title="Lambda Gateway", version="2.0.0", lifespan=lifespan, root_path=config.root_path)
 
 # JWT設定
 # SECRET_KEY等はconfigから直接参照するためグローバル変数は削除
@@ -151,46 +151,22 @@ def build_event(
     return event
 
 
-import docker
-
-# Dockerクライアント初期化
-docker_client = None
-try:
-    docker_client = docker.from_env()
-except Exception:
-    print("Warning: Failed to initialize Docker client. Dynamic IP resolution will better disabled.")
 
 
 def resolve_container_ip(container_name: str) -> str:
     """
     コンテナ名からIPアドレスを解決
-    Gatewayがホストネットワークで動作している場合、
-    Dockerネットワーク内のコンテナ名解決ができないため、直接IPを取得する
-    """
-    global docker_client
     
+    Gatewayが内部ネットワーク(onpre-internal-network)に参加しているため、
+    DockerのDNS機能によりコンテナ名で直接アクセス可能。
+    そのため、基本的にはコンテナ名をそのまま返す。
+    """
     # 既にIPアドレス形式の場合はそのまま返す
     if container_name.replace(".", "").isdigit():
         return container_name
         
-    if not docker_client:
-        try:
-            docker_client = docker.from_env()
-        except Exception:
-            return container_name
-            
-    try:
-        container = docker_client.containers.get(container_name)
-        # ネットワーク設定からIPアドレスを取得（最初のネットワークを使用）
-        networks = container.attrs["NetworkSettings"]["Networks"]
-        for net_name, net_config in networks.items():
-            ip = net_config.get("IPAddress")
-            if ip:
-                return ip
-        return container_name
-    except Exception as e:
-        print(f"Failed to resolve IP for container {container_name}: {e}")
-        return container_name
+    # 同一ネットワーク内なのでコンテナ名で名前解決可能
+    return container_name
 
 
 def proxy_to_lambda(target_container: str, event: dict) -> requests.Response:
