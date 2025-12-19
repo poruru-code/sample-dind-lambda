@@ -26,7 +26,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from gateway.app.config import config
 
 # テスト用設定
-GATEWAY_URL = os.getenv("GATEWAY_URL", "http://localhost:8000")
+GATEWAY_URL = os.getenv("GATEWAY_URL", "https://localhost:443")
 API_KEY = config.X_API_KEY
 VERIFY_SSL = False
 
@@ -123,7 +123,8 @@ class TestE2E:
         token = get_auth_token()
         
         # ScyllaDBの起動待ち（Lambdaが起動するまでリトライ）
-        max_retries = 20
+        # WindowsのDocker Desktop (WSL2) ではScyllaDBの起動に3-5分かかる場合がある
+        max_retries = 40
         for i in range(max_retries):
             try:
                 response = requests.post(

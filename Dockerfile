@@ -18,7 +18,7 @@ COPY docker-compose.yml /app/docker-compose.yml
 # Gatewayアプリのビルドコンテキスト用（内部でビルドする場合）
 # 今回はGatewayもイメージとして扱うため、事前にビルド済みのものを使うか、
 # ここでビルドコンテキストを用意する。
-# ユーザー提案では「image: my-gateway-api:latest」となっているため、
+# ユーザー提案では「image: gateway-api:latest」となっているため、
 # 親コンテナ起動時に内部でビルドするか、loadする必要がある。
 # 簡略化のため、Gatewayのコードもコピーしておく
 COPY gateway/ /app/gateway/

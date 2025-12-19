@@ -22,7 +22,7 @@ echo "Docker daemon started successfully"
 
 # Gatewayイメージのビルド (内部で実行)
 echo "Building Gateway image..."
-docker build --no-cache -t my-gateway-api:latest -f gateway/Dockerfile.app .
+docker build --no-cache -t gateway-api:latest -f gateway/Dockerfile.app .
 
 # Lambda関数イメージをロード
 echo "Loading Lambda function images..."

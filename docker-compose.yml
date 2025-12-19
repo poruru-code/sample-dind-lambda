@@ -2,20 +2,21 @@
 # 開発用: docker compose up -d
 # DinD内部: docker compose up -d (親コンテナが ./data を /app/data にマウントするため相対パスで動作)
 
+include:
+  - docker-compose.lambda.yml  # Lambda関数群
+
 services:
   # ============================================
-  # Permission Helper (統合)
+  # Permission Helper (RustFS用)
   # ============================================
   permission-helper:
     image: alpine
     container_name: onpre-permission-helper
     volumes:
-      - ./data/s3_storage:/data/s3_storage
-      - ./data/scylladb:/data/scylladb
+      - rustfs_data:/data/rustfs
     command: >
       sh -c "
-        chown -R 10001:10001 /data/s3_storage && echo 'RustFS permissions fixed' &&
-        chmod -R 777 /data/scylladb && echo 'ScyllaDB permissions fixed'
+        chown -R 10001:10001 /data/rustfs 2>/dev/null || true && echo 'RustFS permissions fixed'
       "
     restart: "no"
 
@@ -32,7 +33,7 @@ services:
       - "9000:9000"    # S3 API
       - "9001:9001"    # Console
     volumes:
-      - ./data/s3_storage:/data/rustfs
+      - rustfs_data:/data/rustfs
       - ./config/lifecycle.yml:/app/config/lifecycle.yml:ro
     environment:
       - RUSTFS_VOLUMES=/data/rustfs
@@ -57,20 +58,17 @@ services:
   database:
     image: scylladb/scylla:latest
     container_name: onpre-database
-    depends_on:
-      permission-helper:
-        condition: service_completed_successfully
     ports:
       - "8001:8000"    # Alternator API (Host 8001 -> Container 8000)
     volumes:
-      - ./data/scylladb:/var/lib/scylla
+      - scylladb_data:/var/lib/scylla
     command: --smp 1 --memory ${SCYLLADB_MEMORY:-1}G --developer-mode 1 --alternator-port 8000 --alternator-write-isolation always_use_lwt
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8000/ || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 20
-      start_period: 60s
+      retries: 30
+      start_period: 180s
     restart: unless-stopped
 
   # ============================================
@@ -82,7 +80,7 @@ services:
     ports:
       - "9428:9428"    # VictoriaLogs UI/API
     volumes:
-      - ./data/victorialogs:/victoria-logs-data
+      - victorialogs_data:/victoria-logs-data
     command:
       - "-storageDataPath=/victoria-logs-data"
       - "-retentionPeriod=7d"
@@ -97,15 +95,20 @@ services:
   # Gateway Application (FastAPI)
   # ============================================
   gateway:
-    image: my-gateway-api:latest
+    image: gateway-api:latest
     build:
       context: .
       dockerfile: gateway/Dockerfile.app
     container_name: onpre-gateway
     ports:
-      - "8000:8000"    # Gateway API
+      - "443:443"    # Gateway API (HTTPS)
+    volumes:
+      - ./certs:/app/config/ssl:ro    # SSL証明書
     environment:
-      - UVICORN_BIND_ADDR=0.0.0.0:8000
+      - UVICORN_BIND_ADDR=0.0.0.0:443
+      - ENABLE_SSL=true
+      - SSL_CERT_PATH=/app/config/ssl/server.crt
+      - SSL_KEY_PATH=/app/config/ssl/server.key
       - SCYLLADB_HOST=onpre-database
       - SCYLLADB_PORT=8000
     depends_on:
@@ -114,38 +117,8 @@ services:
       - victorialogs
     restart: unless-stopped
 
-  # ============================================
-  # Lambda Functions (Pre-loaded)
-  # ============================================
-  lambda-s3-test:
-    image: lambda-s3-test:latest
-    build:
-      context: ./lambda_functions/s3-test
-    container_name: lambda-s3-test
-    environment:
-      - S3_ENDPOINT=http://onpre-storage:9000
-      - RUSTFS_ROOT_USER=${RUSTFS_ACCESS_KEY:-rustfsadmin}
-      - RUSTFS_ROOT_PASSWORD=${RUSTFS_SECRET_KEY:-rustfsadmin}
-    depends_on:
-      s3-storage:
-        condition: service_healthy
-    restart: unless-stopped
+volumes:
+  scylladb_data:
+  rustfs_data:
+  victorialogs_data:
 
-  lambda-hello:
-    image: lambda-hello:latest
-    build:
-      context: ./lambda_functions/hello
-    container_name: lambda-hello
-    restart: unless-stopped
-
-  lambda-scylla-test:
-    image: lambda-scylla-test:latest
-    build:
-      context: .
-      dockerfile: lambda_functions/scylla-test/Dockerfile
-    container_name: lambda-scylla-test
-    environment:
-      - DYNAMODB_ENDPOINT=http://onpre-database:8000
-    depends_on:
-      - database
-    restart: unless-stopped

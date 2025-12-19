@@ -12,7 +12,7 @@ services:
     container_name: onpre-app-root
     privileged: true  # DinDに必須
     ports:
-      - "8000:8000"   # Gateway API
+      - "443:443"     # Gateway API (HTTPS)
       - "9000:9000"   # RustFS API
       - "9001:9001"   # RustFS Console
       - "9428:9428"   # VictoriaLogs
