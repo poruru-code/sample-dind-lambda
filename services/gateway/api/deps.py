@@ -8,7 +8,7 @@ from typing import Annotated, Optional
 from fastapi import Depends, Header, HTTPException, Request
 from ..config import config
 from ..core.security import verify_token
-from ..services.route_matcher import match_route
+
 from ..models.schemas import TargetFunction
 
 
@@ -51,7 +51,9 @@ async def resolve_lambda_target(request: Request) -> TargetFunction:
     path = request.url.path
     method = request.method
 
-    target_container, path_params, route_path, function_config = match_route(path, method)
+    target_container, path_params, route_path, function_config = (
+        request.app.state.route_matcher.match_route(path, method)
+    )
 
     if not target_container:
         raise HTTPException(status_code=404, detail="Not Found")

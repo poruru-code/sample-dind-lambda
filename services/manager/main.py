@@ -5,7 +5,6 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from typing import Optional, Dict
-from apscheduler.schedulers.background import BackgroundScheduler
 
 from .service import ContainerManager
 import docker.errors
@@ -26,17 +25,27 @@ IDLE_TIMEOUT_MINUTES = int(os.environ.get("IDLE_TIMEOUT_MINUTES", 5))
 async def lifespan(app: FastAPI):
     # Startup Logic: External reconciliation
     try:
+        # prune_managed_containers is sync, keep using threadpool
         await run_in_threadpool(manager.prune_managed_containers)
     except Exception as e:
         logger.error(f"Failed to prune containers on startup: {e}", exc_info=True)
 
     # Start background scheduler for idle cleanup
-    scheduler = BackgroundScheduler()
+    # stop_idle_containers is now async, so we need to run it from an async context.
+    # APScheduler's BackgroundScheduler doesn't support async jobs directly.
+    # Option 1: Use AsyncIOScheduler from apscheduler
+    # Option 2: Wrap in asyncio.run_coroutine_threadsafe
+    # For simplicity, let's wrap with run_in_executor from the loop.
+
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+    scheduler = AsyncIOScheduler()
     scheduler.add_job(
-        lambda: manager.stop_idle_containers(IDLE_TIMEOUT_MINUTES * 60),
+        manager.stop_idle_containers,
         "interval",
         minutes=1,
         id="idle_cleanup",
+        args=[IDLE_TIMEOUT_MINUTES * 60],
     )
     scheduler.start()
     logger.info(f"Idle cleanup scheduler started (timeout: {IDLE_TIMEOUT_MINUTES}m)")
@@ -62,10 +71,8 @@ async def ensure_container(req: EnsureRequest):
     Ensures a container with the given function name is running.
     """
     try:
-        # Run blocking docker call in threadpool
-        host = await run_in_threadpool(
-            manager.ensure_container_running, req.function_name, req.image, req.env
-        )
+        # Call async method directly (no longer needs threadpool)
+        host = await manager.ensure_container_running(req.function_name, req.image, req.env)
         return {"host": host, "port": 8080}
     except docker.errors.ImageNotFound as e:
         logger.error(f"Image not found: {e.explanation}")

@@ -107,7 +107,9 @@ def resolve_container_ip(container_name: str) -> str:
     return container_name
 
 
-async def proxy_to_lambda(target_container: str, event: dict) -> httpx.Response:
+async def proxy_to_lambda(
+    target_container: str, event: dict, client: httpx.AsyncClient
+) -> httpx.Response:
     """
     Lambda RIEコンテナにリクエストを転送
     """
@@ -118,8 +120,7 @@ async def proxy_to_lambda(target_container: str, event: dict) -> httpx.Response:
 
     headers = {"Content-Type": "application/json"}
 
-    async with httpx.AsyncClient() as client:
-        response = await client.post(rie_url, json=event, headers=headers, timeout=30.0)
+    response = await client.post(rie_url, json=event, headers=headers, timeout=30.0)
 
     return response
 

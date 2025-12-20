@@ -18,15 +18,21 @@ from .config import config
 from .core.security import create_access_token
 from .core.proxy import build_event, proxy_to_lambda, parse_lambda_response
 from .models.schemas import AuthRequest, AuthResponse, AuthenticationResult
-from .services.route_matcher import load_routing_config
-from .client import get_lambda_host
-from .services.function_registry import load_functions_config
+from .client import ManagerClient
+
+# Services Imports
+from .services.function_registry import FunctionRegistry
+from .services.route_matcher import RouteMatcher
+from .services.lambda_invoker import LambdaInvoker
+
 from .api.deps import UserIdDep, LambdaTargetDep
 from .core.logging_config import setup_logging
 from .core.exceptions import (
     global_exception_handler,
     http_exception_handler,
     validation_exception_handler,
+    ContainerStartError,
+    LambdaExecutionError,
 )
 
 # Logger setup
@@ -37,9 +43,35 @@ logger = logging.getLogger("gateway.main")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """アプリケーションのライフサイクル管理"""
-    load_routing_config()
-    load_functions_config()
+    # Initialize shared HTTP client
+    # timeout config can be fine-tuned
+    client = httpx.AsyncClient(timeout=30.0)
+
+    # Initialize Services
+    function_registry = FunctionRegistry()
+    route_matcher = RouteMatcher(function_registry)
+
+    # Load initial configs
+    function_registry.load_functions_config()
+    route_matcher.load_routing_config()
+
+    lambda_invoker = LambdaInvoker(client, function_registry)
+    manager_client = ManagerClient(client)
+
+    # Store in app.state for DI
+    app.state.http_client = client
+    app.state.function_registry = function_registry
+    app.state.route_matcher = route_matcher
+    app.state.lambda_invoker = lambda_invoker
+    app.state.manager_client = manager_client
+
+    logger.info("Gateway initialized with shared resources.")
+
     yield
+
+    # Cleanup
+    logger.info("Gateway shutting down, clicking http client.")
+    await client.aclose()
 
 
 app = FastAPI(
@@ -111,14 +143,12 @@ async def invoke_lambda_api(
       - RequestResponse（デフォルト）: 同期呼び出し、結果を返す
       - Event: 非同期呼び出し、即座に202を返す
     """
-    from .services.lambda_invoker import invoke_function, get_function_config_or_none
-    from .core.exceptions import (
-        ContainerStartError,
-        LambdaExecutionError,
-    )
+    # Retrieve dependencies
+    invoker: LambdaInvoker = request.app.state.lambda_invoker
+    registry: FunctionRegistry = request.app.state.function_registry
 
     # 関数存在チェック（404判定用）
-    if get_function_config_or_none(function_name) is None:
+    if registry.get_function_config(function_name) is None:
         return JSONResponse(
             status_code=404,
             content={"message": f"Function not found: {function_name}"},
@@ -130,11 +160,11 @@ async def invoke_lambda_api(
     try:
         if invocation_type == "Event":
             # 非同期呼び出し：バックグラウンドで実行、即座に202を返す
-            background_tasks.add_task(invoke_function, function_name, body)
+            background_tasks.add_task(invoker.invoke_function, function_name, body)
             return Response(status_code=202, content=b"", media_type="application/json")
         else:
             # 同期呼び出し：結果を待って返す
-            resp = await invoke_function(function_name, body)
+            resp = await invoker.invoke_function(function_name, body)
             return Response(
                 content=resp.content,
                 status_code=resp.status_code,
@@ -160,7 +190,7 @@ async def gateway_handler(
     """
     # オンデマンドコンテナ起動
     try:
-        container_host = await get_lambda_host(
+        container_host = await request.app.state.manager_client.ensure_container(
             function_name=target.container_name,
             image=target.function_config.get("image"),
             env=target.function_config.get("environment", {}),
@@ -176,7 +206,11 @@ async def gateway_handler(
     try:
         body = await request.body()
         event = build_event(request, body, user_id, target.path_params, target.route_path)
-        lambda_response = await proxy_to_lambda(container_host, event)
+
+        # Inject shared client
+        lambda_response = await proxy_to_lambda(
+            container_host, event, client=request.app.state.http_client
+        )
 
         # レスポンス変換
         result = parse_lambda_response(lambda_response)

@@ -4,10 +4,10 @@
 ビジネスロジックと外部連携を提供します。
 """
 
-from .route_matcher import load_routing_config, match_route, get_routing_config
+from .function_registry import FunctionRegistry
+from .route_matcher import RouteMatcher
 
 __all__ = [
-    "load_routing_config",
-    "match_route",
-    "get_routing_config",
+    "FunctionRegistry",
+    "RouteMatcher",
 ]

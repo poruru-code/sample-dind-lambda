@@ -1,11 +1,10 @@
-import docker
 import docker.errors
 import time
 import logging
 import os
-import socket
-import threading
+import asyncio
 from typing import Dict, Optional
+from .docker_adaptor import DockerAdaptor
 
 logger = logging.getLogger("manager.service")
 
@@ -16,20 +15,17 @@ class ContainerManager:
     """
 
     def __init__(self, network: Optional[str] = None):
-        self.client = docker.from_env()
+        self.docker = DockerAdaptor()
         self.last_accessed: Dict[str, float] = {}
         # Per-container lock management
-        self.locks: Dict[str, threading.Lock] = {}
-        self._locks_lock = threading.Lock()
+        self.locks: Dict[str, asyncio.Lock] = {}
+        self._locks_lock = asyncio.Lock()
 
         # Use env var or default to 'bridge' if not specified.
-        # In this architecture, manager is in the same docker network as gateway usually.
-        # But Lambdas might be in a separate network or the same one.
-        # We will allow injection via env var `CONTAINERS_NETWORK`
         self.network = network or os.environ.get("CONTAINERS_NETWORK") or "bridge"
         logger.info(f"ContainerManager initialized with network: {self.network}")
 
-    def ensure_container_running(
+    async def ensure_container_running(
         self, name: str, image: Optional[str] = None, env: Optional[Dict[str, str]] = None
     ) -> str:
         """
@@ -41,30 +37,34 @@ class ContainerManager:
             image = f"{name}:latest"
 
         # Thread-safe acquisition of the per-container lock
-        with self._locks_lock:
+        async with self._locks_lock:
             if name not in self.locks:
-                self.locks[name] = threading.Lock()
+                self.locks[name] = asyncio.Lock()
             lock = self.locks[name]
 
         # Use name-based lock to prevent race conditions (TOCTOU)
-        with lock:
+        async with lock:
             try:
-                container = self.client.containers.get(name)
+                container = await self.docker.get_container(name)
 
                 if container.status == "running":
                     pass  # Already running
 
                 elif container.status == "exited":
                     logger.info(f"Warm-up: Restarting container {name}...")
-                    container.start()
+                    # container.start() is blocking? DockerAdaptor doesn't have start() yet?
+                    # Adaptor should have start helpers or we use generic run_in_executor
+                    # Let's assume container object methods are blocking.
+                    loop = asyncio.get_running_loop()
+                    await loop.run_in_executor(None, container.start)
                 else:
                     logger.info(f"Container {name} in state {container.status}, removing...")
-                    container.remove(force=True)
+                    await self.docker.remove_container(container, force=True)
                     raise docker.errors.NotFound(f"Removed {name}")
 
             except docker.errors.NotFound:
                 logger.info(f"Cold Start: Creating and starting container {name}...")
-                container = self.client.containers.run(
+                container = await self.docker.run_container(
                     image,
                     name=name,
                     detach=True,
@@ -75,7 +75,7 @@ class ContainerManager:
                 )
 
             # Reload container to get latest attributes (IP) and check readiness
-            container.reload()
+            await self.docker.reload_container(container)
             try:
                 ip = container.attrs["NetworkSettings"]["Networks"][self.network]["IPAddress"]
                 if not ip:
@@ -89,42 +89,44 @@ class ContainerManager:
                 ip = name
 
             # Use IP address for readiness check to avoid DNS lag
-            self._wait_for_readiness(ip)
+            await self._wait_for_readiness(ip)
             return name
 
-    def _wait_for_readiness(self, host: str, port: int = 8080, timeout: int = 30) -> None:
+    async def _wait_for_readiness(self, host: str, port: int = 8080, timeout: int = 30) -> None:
         start = time.time()
         while time.time() - start < timeout:
             try:
-                # We need to resolve IP if we are inside a container and 'host' is a container name
-                # This works if we share the docker network or have DNS resolution
-                with socket.create_connection((host, port), timeout=1):
-                    return
-            except (socket.timeout, ConnectionRefusedError, OSError):
-                time.sleep(0.5)
+                # Use asyncio.open_connection for non-blocking connect
+                # Need to handle host resolution if it is a container name
+                _, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout=1.0)
+                writer.close()
+                await writer.wait_closed()
+                return
+            except (OSError, asyncio.TimeoutError):
+                await asyncio.sleep(0.5)
 
         logger.warning(f"Container {host} did not become ready in {timeout}s")
 
-    def stop_idle_containers(self, timeout_seconds: int = 900) -> None:
+    async def stop_idle_containers(self, timeout_seconds: int = 900) -> None:
         now = time.time()
         to_remove = []
 
-        for name, last_access in self.last_accessed.items():
+        for name, last_access in list(self.last_accessed.items()):  # Iterate copy
             if now - last_access > timeout_seconds:
                 try:
                     logger.info(f"Scale-down: Stopping idle container {name}")
-                    container = self.client.containers.get(name)
-                    if container.status == "running":
-                        container.stop()
-                    to_remove.append(name)
-                except docker.errors.NotFound:
-                    to_remove.append(name)
-                except docker.errors.APIError as e:
-                    logger.error(f"Docker API error while stopping {name}: {e}")
-                except Exception as e:
-                    logger.error(f"Unexpected error stopping {name}: {e}", exc_info=True)
+                    try:
+                        container = await self.docker.get_container(name)
+                        if container.status == "running":
+                            await self.docker.stop_container(container)
+                    except docker.errors.NotFound:
+                        pass
 
-        with self._locks_lock:
+                    to_remove.append(name)
+                except Exception as e:
+                    logger.error(f"Error stopping/checking {name}: {e}", exc_info=True)
+
+        async with self._locks_lock:
             for name in to_remove:
                 if name in self.locks:
                     del self.locks[name]
@@ -136,10 +138,23 @@ class ContainerManager:
     def prune_managed_containers(self):
         """
         Kills and removes containers managed by this service (zombies).
+        WARNING: This is synchronous as currently written, but usually called at startup.
+        Should be updated to async if possible, but startup might be sync.
+        Original code was running in threadpool.
+        Let's keep it sync or make it async?
+        The plan said "convert ContainerManager methods to async".
+        But prune is called from lifecycle.
+
+        If we make it async, we need to update main.py to await it.
         """
+        # For now, let's leave it sync or use the sync client?
+        # But we replaced self.client with self.docker (Adaptor).
+        # Adaptor has `_client` which is sync.
+
         logger.info("Pruning zombie containers...")
         try:
-            containers = self.client.containers.list(
+            # Direct access to sync client for pruning (used at startup)
+            containers = self.docker._client.containers.list(
                 all=True,  # Include stopped ones
                 filters={"label": "created_by=sample-dind"},
             )
@@ -149,13 +164,7 @@ class ContainerManager:
                     if container.status == "running":
                         container.kill()
                     container.remove(force=True)
-                except docker.errors.APIError as e:
-                    logger.error(f"Docker API error while removing zombie {container.name}: {e}")
                 except Exception as e:
-                    logger.error(
-                        f"Unexpected error removing zombie {container.name}: {e}", exc_info=True
-                    )
-        except docker.errors.APIError as e:
-            logger.error(f"Failed to list containers for pruning: {e}")
+                    logger.error(f"Error removing {container.name}: {e}")
         except Exception as e:
-            logger.error(f"Failed to prune containers: {e}", exc_info=True)
+            logger.error(f"Failed to prune containers: {e}")

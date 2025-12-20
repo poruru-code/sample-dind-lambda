@@ -13,72 +13,69 @@ from ..config import config
 
 logger = logging.getLogger("gateway.function_registry")
 
-# キャッシュされた関数設定
-_function_registry: Dict[str, Dict[str, Any]] = {}
-_defaults: Dict[str, Any] = {}
 
+class FunctionRegistry:
+    def __init__(self):
+        self._registry: Dict[str, Dict[str, Any]] = {}
+        self._defaults: Dict[str, Any] = {}
+        self.config_path = config.FUNCTIONS_CONFIG_PATH
 
-def load_functions_config() -> Dict[str, Dict[str, Any]]:
-    """
-    functions.yml を読み込んでキャッシュ
+    def load_functions_config(self) -> Dict[str, Dict[str, Any]]:
+        """
+        functions.yml を読み込んでキャッシュ
 
-    Returns:
-        関数名→設定の辞書
-    """
-    global _function_registry, _defaults
+        Returns:
+            関数名→設定の辞書
+        """
+        try:
+            with open(self.config_path, "r", encoding="utf-8") as f:
+                cfg = yaml.safe_load(f) or {}
 
-    try:
-        with open(config.FUNCTIONS_CONFIG_PATH, "r", encoding="utf-8") as f:
-            cfg = yaml.safe_load(f) or {}
+            self._defaults = cfg.get("defaults", {})
+            self._registry = cfg.get("functions", {})
 
-        _defaults = cfg.get("defaults", {})
-        _function_registry = cfg.get("functions", {})
+            logger.info(f"Loaded {len(self._registry)} functions from {self.config_path}")
 
-        logger.info(
-            f"Loaded {len(_function_registry)} functions from {config.FUNCTIONS_CONFIG_PATH}"
-        )
+        except FileNotFoundError:
+            logger.warning(f"Functions config not found at {self.config_path}")
+            self._registry = {}
+            self._defaults = {}
 
-    except FileNotFoundError:
-        logger.warning(f"Functions config not found at {config.FUNCTIONS_CONFIG_PATH}")
-        _function_registry = {}
-        _defaults = {}
+        except yaml.YAMLError as e:
+            logger.error(f"Error parsing functions config: {e}")
+            self._registry = {}
+            self._defaults = {}
 
-    except yaml.YAMLError as e:
-        logger.error(f"Error parsing functions config: {e}")
-        _function_registry = {}
-        _defaults = {}
+        return self._registry
 
-    return _function_registry
+    def get_function_config(self, function_name: str) -> Optional[Dict[str, Any]]:
+        """
+        関数名から設定を取得
 
+        デフォルト環境変数を関数固有の設定にマージして返します。
 
-def get_function_config(function_name: str) -> Optional[Dict[str, Any]]:
-    """
-    関数名から設定を取得
+        Args:
+            function_name: 関数名（コンテナ名）
 
-    デフォルト環境変数を関数固有の設定にマージして返します。
+        Returns:
+            関数設定（デフォルトマージ済み）。存在しない場合は None
+        """
+        if function_name not in self._registry:
+            return None
 
-    Args:
-        function_name: 関数名（コンテナ名）
+        func_config = self._registry[function_name] or {}
 
-    Returns:
-        関数設定（デフォルトマージ済み）。存在しない場合は None
-    """
-    if function_name not in _function_registry:
-        return None
+        # デフォルト環境変数と関数固有の環境変数をマージ
+        merged_env = {}
+        default_env = self._defaults.get("environment", {})
+        func_env = func_config.get("environment", {})
 
-    func_config = _function_registry[function_name] or {}
+        # デフォルト → 関数固有の順でマージ（関数固有が優先）
+        merged_env.update(default_env)
+        merged_env.update(func_env)
 
-    # デフォルト環境変数と関数固有の環境変数をマージ
-    merged_env = {}
-    default_env = _defaults.get("environment", {})
-    func_env = func_config.get("environment", {})
+        # 結果を構築
+        result = dict(func_config)
+        result["environment"] = merged_env
 
-    # デフォルト → 関数固有の順でマージ（関数固有が優先）
-    merged_env.update(default_env)
-    merged_env.update(func_env)
-
-    # 結果を構築
-    result = dict(func_config)
-    result["environment"] = merged_env
-
-    return result
+        return result
