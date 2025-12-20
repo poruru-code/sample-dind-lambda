@@ -39,6 +39,7 @@ dev = [
     "ruff>=0.1.6",
     "httpx>=0.25.0",  # FastAPI TestClient用
     "lefthook",  # Git hooks manager
+    "cryptography>=41.0.0",  # SSL証明書生成用
 ]
 
 [build-system]

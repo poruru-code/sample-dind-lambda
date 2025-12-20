@@ -112,7 +112,6 @@ docker logs -f onpre-app-root
 ### 開発環境セットアップ
 ```bash
 # 1. 仮想環境作成と依存関係インストール
-cd gateway
 uv venv
 .venv\Scripts\activate  # Windows
 # source .venv/bin/activate  # macOS/Linux
