@@ -130,3 +130,52 @@ def test_ensure_container_concurrency():
 
         # Run should be called ONLY ONCE despite 5 requests
         assert mock_client.containers.run.call_count == 1
+
+
+def test_ensure_container_ip_fallback():
+    """Verify that it falls back to container name if IP address is missing."""
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_container.status = "running"
+    # Network or IPAddress is missing
+    mock_container.attrs = {"NetworkSettings": {"Networks": {}}}
+    mock_client.containers.get.return_value = mock_container
+
+    with (
+        patch.object(manager, "client", mock_client),
+        patch("services.manager.service.socket.create_connection"),
+        patch.object(manager, "network", "dind-network"),
+    ):
+        response = client.post("/containers/ensure", json={"function_name": "fallback-func"})
+
+        assert response.status_code == 200
+        # Host should be container name if IP not found
+        assert response.json()["host"] == "fallback-func"
+
+
+def test_ensure_container_readiness_with_ip():
+    """Verify that readiness check is performed using the IP address."""
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_container.status = "running"
+    mock_container.attrs = {
+        "NetworkSettings": {"Networks": {"dind-network": {"IPAddress": "10.0.0.99"}}}
+    }
+    mock_client.containers.get.return_value = mock_container
+
+    with (
+        patch.object(manager, "client", mock_client),
+        patch("services.manager.service.socket.create_connection") as mock_conn,
+        patch.object(manager, "network", "dind-network"),
+    ):
+        response = client.post("/containers/ensure", json={"function_name": "ip-check-func"})
+
+        assert response.status_code == 200
+        assert response.json()["host"] == "10.0.0.99"
+
+        # Verify create_connection was called with IP ADDRESS, not function name
+        # args[0] is (address, port)
+        args, _ = mock_conn.call_args
+        target_addr = args[0][0]
+        assert target_addr == "10.0.0.99"
+        assert target_addr != "ip-check-func"
