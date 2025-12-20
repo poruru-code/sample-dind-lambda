@@ -21,7 +21,7 @@ import pytest
 import requests
 import urllib3
 
-from gateway.app.config import config
+from services.gateway.config import config
 
 # 自己署名証明書の警告を抑制
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
