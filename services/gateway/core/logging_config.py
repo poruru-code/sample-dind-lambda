@@ -42,6 +42,6 @@ def setup_logging(level=logging.INFO):
     logger.addHandler(handler)
 
     # ライブラリのログレベル調整
-    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    logging.getLogger("uvicorn.access").setLevel(logging.INFO)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
