@@ -24,6 +24,7 @@ CERTS_DIR = PROJECT_ROOT / "certs"
 
 # 設定
 GATEWAY_URL = "https://localhost:443"
+SCYLLADB_API_URL = "http://localhost:8001"
 MAX_RETRIES = 60
 RETRY_INTERVAL = 3  # seconds
 
@@ -167,6 +168,35 @@ def wait_for_gateway() -> bool:
     return False
 
 
+def check_scylladb_health() -> bool:
+    """ScyllaDB (Alternator) のヘルスチェック - Docker Health Status ベース"""
+    try:
+        import docker
+
+        client = docker.from_env()
+        container = client.containers.get("onpre-database")
+        health = container.attrs.get("State", {}).get("Health", {})
+        status = health.get("Status", "unknown")
+        return status == "healthy"
+    except Exception:
+        return False
+
+
+def wait_for_scylladb() -> bool:
+    """ScyllaDBの起動を待機 (Docker Health Check)"""
+    print("[2.5/4] Waiting for ScyllaDB (Docker Health) to be ready...")
+
+    for i in range(1, MAX_RETRIES + 1):
+        if check_scylladb_health():
+            print("ScyllaDB is healthy!")
+            return True
+        print(f"Waiting for ScyllaDB... ({i}/{MAX_RETRIES})")
+        time.sleep(RETRY_INTERVAL)
+
+    print("Error: ScyllaDB failed to become healthy within timeout.")
+    return False
+
+
 def start_containers(build: bool = False, dind: bool = False):
     """Docker Composeでコンテナを起動"""
     print("[2/4] Starting containers...")
@@ -261,6 +291,12 @@ def main():
         start_containers(build=args.build, dind=args.dind)
 
         # ヘルスチェック待機
+        if not wait_for_scylladb():
+            # ログを表示
+            compose_file = "docker-compose.dind.yml" if args.dind else "docker-compose.yml"
+            run_command(["docker", "compose", "-f", compose_file, "logs", "database"], check=False)
+            return 1
+
         if not wait_for_gateway():
             # ログを表示
             compose_file = "docker-compose.dind.yml" if args.dind else "docker-compose.yml"

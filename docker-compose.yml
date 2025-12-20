@@ -60,11 +60,11 @@ services:
       - "8001:8000"    # Alternator API (Host 8001 -> Container 8000)
     volumes:
       - scylladb_data:/var/lib/scylla
-    command: --smp 1 --memory ${SCYLLADB_MEMORY:-1}G --developer-mode 1 --alternator-port 8000 --alternator-write-isolation always_use_lwt
+    command: --smp 1 --memory ${SCYLLADB_MEMORY:-1}G --developer-mode 1 --alternator-port 8000 --alternator-address 0.0.0.0 --alternator-write-isolation always_use_lwt
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8000/ || exit 1"]
+      test: ["CMD-SHELL", "cqlsh -e 'DESCRIBE KEYSPACES' || exit 1"]
       interval: 10s
-      timeout: 5s
+      timeout: 10s
       retries: 30
       start_period: 180s
     restart: unless-stopped
