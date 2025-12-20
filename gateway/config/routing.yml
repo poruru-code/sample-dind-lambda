@@ -5,19 +5,30 @@ routes:
   # S3テスト用Lambda
   - path: "/api/s3/test"
     method: "POST"
-    target_container: "lambda-s3-test"
-  
+    function:
+      container: "lambda-s3-test"
+      # image: オプション（省略時は container:latest）
+      environment:
+        S3_ENDPOINT: "http://onpre-storage:9000"
+        RUSTFS_ROOT_USER: "rustfsadmin"
+        RUSTFS_ROOT_PASSWORD: "rustfsadmin"
+
   # Hello Lambda
   - path: "/api/hello"
     method: "POST"
-    target_container: "lambda-hello"
+    function:
+      container: "lambda-hello"
 
   # ScyllaDB Test Lambda
   - path: "/api/scylla/test"
     method: "POST"
-    target_container: "lambda-scylla-test"
-  
+    function:
+      container: "lambda-scylla-test"
+      environment:
+        DYNAMODB_ENDPOINT: "http://onpre-database:8000"
+
   # パスパラメータの例
   # - path: "/api/users/{user_id}"
   #   method: "GET"
-  #   target_container: "lambda-user-get"
+  #   function:
+  #     container: "lambda-user-get"

@@ -1,9 +1,6 @@
-# Docker Composeファイル
-# 開発用: docker compose up -d
-# DinD内部: docker compose up -d (親コンテナが ./data を /app/data にマウントするため相対パスで動作)
-
-include:
-  - docker-compose.lambda.yml  # Lambda関数群
+# Lambda関数は動的起動に変更（オンデマンド起動・15分アイドル停止）
+# include:
+#   - docker-compose.lambda.yml
 
 services:
   # ============================================
@@ -104,6 +101,7 @@ services:
       - "443:443"    # Gateway API (HTTPS)
     volumes:
       - ./certs:/app/config/ssl:ro    # SSL証明書
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker操作用
     environment:
       - UVICORN_BIND_ADDR=0.0.0.0:443
       - ENABLE_SSL=true
@@ -111,6 +109,8 @@ services:
       - SSL_KEY_PATH=/app/config/ssl/server.key
       - SCYLLADB_HOST=onpre-database
       - SCYLLADB_PORT=8000
+      - DOCKER_NETWORK=sample-dind-lambda_default  # オンデマンドコンテナ用ネットワーク
+      - IDLE_TIMEOUT_MINUTES=${IDLE_TIMEOUT_MINUTES:-5}  # アイドル停止までの分数
     depends_on:
       - database
       - s3-storage

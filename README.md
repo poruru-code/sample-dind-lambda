@@ -3,28 +3,33 @@ Docker in Docker (DinD) 技術を活用した、オンプレミス環境向け�
 
 ## 特徴
 - **Pure DinD**: 1つの親コンテナ内に Gateway, Storage, DB, Lambda 等の全サービスを集約。
+- **Serverless-like**: Lambda関数はオンデマンドで起動し、アイドル時に自動停止（デフォルト5分）。
 - **Direct Access**: リバースプロキシを排し、各サービスへHTTPポートで直接アクセス可能。
 - **Hybrid Dev**: 開発用 (`docker-compose.yml`) と 本番用 (`docker-compose.dind.yml`) をシームレスに切り替え。
 
 ## アーキテクチャ
 
 ```mermaid
-graph LR
-    Client
+sequenceDiagram
+    participant Client
+    participant Gateway
+    participant Docker
+    participant Lambda
+
+    Client->>Gateway: API Request
+    Gateway->>Docker: ensure_container_running()
     
-    subgraph "Docker Environment"
-        Gateway[:8000]
-        S3[:9000]
-        DB[:8001]
-        Logs[:9428]
+    alt Cold Start
+        Docker->>Lambda: 起動
+    else Warm Start
+        Docker->>Lambda: 再起動
     end
     
-    Client --> Gateway
-    Client --> S3
-    Client --> DB
-    Client --> Logs
+    Gateway->>Lambda: Proxy Request
+    Lambda->>Gateway: Response
+    Gateway->>Client: Response
     
-    Gateway -.->|Manage| Lambda((Lambda))
+    Note over Docker,Lambda: 5分アイドル後に自動停止
 ```
 
 ### 構成
@@ -61,6 +66,17 @@ docker compose up -d
 
 # 停止
 docker compose down
+```
+
+#### Lambda設定（環境変数）
+| 変数名 | デフォルト | 説明 |
+|--------|-----------|------|
+| `IDLE_TIMEOUT_MINUTES` | `5` | アイドル状態のLambdaコンテナを停止するまでの分数 |
+| `DOCKER_NETWORK` | `sample-dind-lambda_default` | Lambdaコンテナが参加するDockerネットワーク |
+
+```bash
+# 例: アイドルタイムアウトを15分に設定
+IDLE_TIMEOUT_MINUTES=15 docker compose up -d
 ```
 
 ### 2. 本番/DinDモード

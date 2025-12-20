@@ -244,18 +244,20 @@ async def health_check():
 async def gateway_handler(request: Request, path: str):
     """
     キャッチオールルート：routing.ymlに基づいてLambda RIEに転送
+    
+    オンデマンドでコンテナを起動し、アイドル時に自動停止される。
     """
     request_path = f"/{path}"
-    
-    # ルーティングマッチング
-    target_container, path_params, route_path = match_route(request_path, request.method)
-    
+
+    # ルーティングマッチング（拡張版）
+    target_container, path_params, route_path, function_config = match_route(request_path, request.method)
+
     if not target_container:
         return JSONResponse(
             status_code=404,
             content={"message": "Not Found"}
         )
-    
+
     # 認証検証
     authorization = request.headers.get("authorization")
     try:
@@ -265,16 +267,37 @@ async def gateway_handler(request: Request, path: str):
             status_code=401,
             content={"message": "Unauthorized"}
         )
-    
+
+    # オンデマンドコンテナ起動 / ウォームアップ
+    try:
+        from .container_manager import get_manager
+        container_manager = get_manager()
+
+        # function_configからimage/environmentを取得
+        image = function_config.get("image")  # None可（デフォルトでcontainer:latestになる）
+        env = function_config.get("environment", {})
+
+        container_host = container_manager.ensure_container_running(
+            name=target_container,
+            image=image,
+            env=env
+        )
+    except Exception as e:
+        print(f"Container start failed: {e}")
+        return JSONResponse(
+            status_code=503,
+            content={"message": "Service Unavailable", "detail": "Cold start failed"}
+        )
+
     # リクエストボディを取得
     body = await request.body()
-    
+
     # eventオブジェクトを構築
     event = build_event(request, body, user_id, path_params, route_path)
-    
-    # Lambda RIEに転送
+
+    # Lambda RIEに転送（container_hostを使用）
     try:
-        lambda_response = proxy_to_lambda(target_container, event)
+        lambda_response = proxy_to_lambda(container_host, event)
         
         # Lambdaからのレスポンスを返却
         try:

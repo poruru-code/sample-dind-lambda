@@ -6,50 +6,33 @@ APScheduler - ライフサイクル管理とcron実行
 """
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
-import docker
 import time
 import logging
+
+import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Docker クライアント
-docker_client = docker.from_env()
-
-# アイドルタイムアウト（秒）
-IDLE_TIMEOUT = 300  # 5分
+# アイドルタイムアウト（分）- 環境変数で上書き可能
+IDLE_TIMEOUT_MINUTES = int(os.environ.get("IDLE_TIMEOUT_MINUTES", 5))
+IDLE_TIMEOUT = IDLE_TIMEOUT_MINUTES * 60  # 秒に変換
 
 
 def cleanup_idle_containers():
     """
-    アイドル状態のLambdaコンテナを停止・削除
+    アイドル状態のLambdaコンテナを停止
+    
+    ContainerManagerに委譲してアイドルコンテナを検出・停止
     """
     logger.info("Starting idle container cleanup...")
     
     try:
-        # lambda- プレフィックスを持つコンテナを検索
-        containers = docker_client.containers.list(
-            filters={"name": "lambda-"}
-        )
+        from .container_manager import get_manager
+        manager = get_manager()
         
-        current_time = time.time()
-        
-        for container in containers:
-            # コンテナのメタデータから最終アクセス時刻を取得
-            # （実際にはlambda_gatewayのcontainer_poolと連携が必要）
-            
-            # TODO: 共有ストレージ（Redis/DB）から最終アクセス時刻を取得
-            # 現在は簡易的にコンテナの起動時刻を使用
-            
-            started_at = container.attrs['State']['StartedAt']
-            # 簡易実装：起動から5分以上経過したコンテナを削除
-            
-            logger.info(f"Checking container: {container.name}")
-            
-            # 実際の実装では、last_accessedを確認
-            # if current_time - last_accessed > IDLE_TIMEOUT:
-            #     logger.info(f"Removing idle container: {container.name}")
-            #     container.remove(force=True)
+        # 15分（900秒）以上アクセスがないコンテナを停止
+        manager.stop_idle_containers(timeout_seconds=IDLE_TIMEOUT)
         
         logger.info("Cleanup completed")
         

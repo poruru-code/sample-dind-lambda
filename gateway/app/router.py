@@ -66,42 +66,57 @@ def _path_to_regex(path_pattern: str) -> str:
     return f"^{regex_pattern}$"
 
 
-def match_route(request_path: str, request_method: str) -> Tuple[Optional[str], Dict[str, str], Optional[str]]:
+def match_route(request_path: str, request_method: str) -> Tuple[Optional[str], Dict[str, str], Optional[str], Dict[str, Any]]:
     """
     リクエストパスとメソッドからターゲットコンテナを特定
-    
+
     Args:
         request_path: リクエストパス (例: "/api/users/123")
         request_method: HTTPメソッド (例: "POST")
-    
+
     Returns:
         Tuple of:
             - target_container: コンテナ名 (見つからない場合はNone)
             - path_params: パスパラメータの辞書
             - route_path: マッチしたルートのパスパターン (resource用)
+            - function_config: function設定（image, environment等）
     """
     routes = get_routing_config()
-    
+
     for route in routes:
         route_path = route.get("path", "")
         route_method = route.get("method", "").upper()
-        target_container = route.get("target_container", "")
-        
+
         # メソッドが一致するか確認
         if request_method.upper() != route_method:
             continue
-        
+
         # パスパターンを正規表現に変換してマッチング
         regex_pattern = _path_to_regex(route_path)
         match = re.match(regex_pattern, request_path)
-        
+
         if match:
             # パスパラメータを抽出
             path_params = match.groupdict()
-            return target_container, path_params, route_path
-    
+
+            # 新しいfunction構造に対応
+            function_config = route.get("function", {})
+            if function_config:
+                # 新構造: function.container
+                target_container = function_config.get("container", "")
+            else:
+                # 後方互換性: target_container（旧構造）
+                target_container = route.get("target_container", "")
+                function_config = {
+                    "container": target_container,
+                    "image": route.get("image"),
+                    "environment": route.get("environment", {})
+                }
+
+            return target_container, path_params, route_path, function_config
+
     # マッチするルートが見つからない
-    return None, {}, None
+    return None, {}, None, {}
 
 
 def extract_path_params(request_path: str, route_pattern: str) -> Dict[str, str]:
