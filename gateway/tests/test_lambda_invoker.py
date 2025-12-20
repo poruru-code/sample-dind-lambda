@@ -75,6 +75,8 @@ class TestLambdaInvoker:
         """呼び出し時にコンテナを起動する"""
         from gateway.app.services.lambda_invoker import invoke_function
 
+        mock_container_manager.resolve_gateway_internal_url.return_value = "https://mock-gateway"
+
         with patch(
             "gateway.app.services.lambda_invoker.get_function_config",
             return_value=mock_function_config,
@@ -86,25 +88,32 @@ class TestLambdaInvoker:
                 with patch("gateway.app.services.lambda_invoker.requests.post"):
                     invoke_function("lambda-hello", b"{}")
 
+                    expected_env = mock_function_config["environment"].copy()
+                    expected_env["GATEWAY_INTERNAL_URL"] = "https://mock-gateway"
+
                     mock_container_manager.ensure_container_running.assert_called_once_with(
                         name="lambda-hello",
                         image=None,
-                        env=mock_function_config["environment"],
+                        env=expected_env,
                     )
 
-    def test_invoke_function_raises_container_start_error(self, mock_function_config):
+    def test_invoke_function_raises_container_start_error(
+        self, mock_function_config, mock_container_manager
+    ):
         """コンテナ起動失敗時は ContainerStartError を送出"""
         from gateway.app.services.lambda_invoker import invoke_function
+
+        mock_container_manager.resolve_gateway_internal_url.return_value = "https://mock-gateway"
+        mock_container_manager.ensure_container_running.side_effect = Exception("Container failed")
 
         with patch(
             "gateway.app.services.lambda_invoker.get_function_config",
             return_value=mock_function_config,
         ):
-            with patch("gateway.app.services.lambda_invoker.get_manager") as mock_manager:
-                mock_manager.return_value.ensure_container_running.side_effect = Exception(
-                    "Container failed"
-                )
-
+            with patch(
+                "gateway.app.services.lambda_invoker.get_manager",
+                return_value=mock_container_manager,
+            ):
                 with pytest.raises(ContainerStartError):
                     invoke_function("lambda-hello", b"{}")
 
@@ -113,6 +122,8 @@ class TestLambdaInvoker:
     ):
         """リクエスト例外時は LambdaExecutionError を送出"""
         from gateway.app.services.lambda_invoker import invoke_function
+
+        mock_container_manager.resolve_gateway_internal_url.return_value = "https://mock-gateway"
 
         with patch(
             "gateway.app.services.lambda_invoker.get_function_config",
