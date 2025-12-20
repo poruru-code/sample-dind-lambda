@@ -108,12 +108,12 @@ docker logs -f onpre-app-root
 # 1. 仮想環境作成と依存関係インストール
 cd gateway
 uv venv
+.venv\Scripts\activate  # Windows
+# source .venv/bin/activate  # macOS/Linux
 uv pip install -e ".[dev]"
 
-# 2. Git hooks (Ruff自動適用) のセットアップ
-# lefthookがインストールされていない場合:
-#   Windows: winget install evilmartians.lefthook
-#   macOS: brew install lefthook
+# 2. Git hooks のセットアップ
+cd ..
 lefthook install
 ```
 

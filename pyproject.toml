@@ -39,6 +39,7 @@ dev = [
     "black>=23.11.0",
     "ruff>=0.1.6",
     "httpx>=0.25.0",  # FastAPI TestClient用
+    "lefthook",  # Git hooks manager
 ]
 
 [build-system]
