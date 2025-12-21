@@ -219,3 +219,76 @@ async def test_cache_miss_retry_after_invalidation(mock_client):
     host2 = await manager_client.ensure_container("test-func")
     assert host2 == "new-host"
     assert mock_client.post.call_count == 1  # Now called Manager
+
+
+# ===========================================
+# Singleflight Tests (TDD Red Phase)
+# ===========================================
+
+
+@pytest.mark.asyncio
+async def test_singleflight_coalesces_concurrent_requests(mock_client):
+    """同時リクエストが1回の Manager 呼び出しに統合される (Thundering Herd 対策)"""
+    import asyncio
+    from services.gateway.services.container_cache import ContainerHostCache
+
+    cache = ContainerHostCache()
+    call_count = 0
+
+    async def slow_manager_response(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        await asyncio.sleep(0.1)  # Manager 処理をシミュレート
+        mock_response = MagicMock(spec=httpx.Response)
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"host": "coalesced-host"}
+        mock_response.raise_for_status = MagicMock()
+        return mock_response
+
+    mock_client.post.side_effect = slow_manager_response
+
+    manager_client = ManagerClient(mock_client, cache=cache)
+
+    # 3件の同時リクエストを発行
+    results = await asyncio.gather(
+        manager_client.ensure_container("test-func"),
+        manager_client.ensure_container("test-func"),
+        manager_client.ensure_container("test-func"),
+    )
+
+    # 全員同じ結果を受け取る
+    assert results == ["coalesced-host", "coalesced-host", "coalesced-host"]
+
+    # Manager への呼び出しは1回だけ
+    assert call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_singleflight_propagates_error_to_all_waiters(mock_client):
+    """エラー時は全待機者にエラーが伝播される"""
+    import asyncio
+    from services.gateway.services.container_cache import ContainerHostCache
+    from services.gateway.core.exceptions import ManagerUnreachableError
+
+    cache = ContainerHostCache()
+
+    async def failing_manager_response(*args, **kwargs):
+        await asyncio.sleep(0.1)
+        raise httpx.RequestError("Manager down", request=MagicMock())
+
+    mock_client.post.side_effect = failing_manager_response
+
+    manager_client = ManagerClient(mock_client, cache=cache)
+
+    # 3件の同時リクエストを発行 (return_exceptions=True でエラーを収集)
+    results = await asyncio.gather(
+        manager_client.ensure_container("test-func"),
+        manager_client.ensure_container("test-func"),
+        manager_client.ensure_container("test-func"),
+        return_exceptions=True,
+    )
+
+    # 全員が同じエラーを受け取る
+    assert len(results) == 3
+    for err in results:
+        assert isinstance(err, ManagerUnreachableError)

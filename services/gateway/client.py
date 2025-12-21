@@ -1,4 +1,5 @@
 from typing import Optional, Dict
+import asyncio
 import httpx
 import os
 import logging
@@ -14,12 +15,15 @@ from services.common.core.request_context import get_request_id
 logger = logging.getLogger("gateway.client")
 
 MANAGER_URL = os.getenv("MANAGER_URL", "http://manager:8081")
+MANAGER_TIMEOUT = float(os.getenv("MANAGER_TIMEOUT", "30"))
 
 
 class ManagerClient:
     def __init__(self, http_client: httpx.AsyncClient, cache: Optional[ContainerHostCache] = None):
         self.client = http_client
         self.cache = cache or ContainerHostCache()
+        # Singleflight: 進行中のリクエストを管理
+        self._pending_requests: Dict[str, asyncio.Future] = {}
 
     def invalidate_cache(self, function_name: str) -> None:
         """
@@ -37,7 +41,7 @@ class ManagerClient:
         """
         Calls Manager Service to ensure container is running and get its host/IP.
 
-        Uses TTL-based cache to avoid redundant Manager calls on warm starts.
+        Uses TTL-based cache and Singleflight pattern to avoid redundant Manager calls.
 
         Raises:
             FunctionNotFoundError: 関数/イメージが存在しない (404)
@@ -51,7 +55,40 @@ class ManagerClient:
             logger.debug(f"Cache hit for {function_name}: {cached_host}")
             return cached_host
 
-        # 2. キャッシュミス → Manager に問い合わせ
+        # 2. Singleflight: 進行中のリクエストがあれば待機
+        if function_name in self._pending_requests:
+            logger.debug(f"Singleflight: waiting for pending request for {function_name}")
+            return await self._pending_requests[function_name]
+
+        # 3. 自分が代表して問い合わせ
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[str] = loop.create_future()
+        self._pending_requests[function_name] = future
+
+        try:
+            host = await self._fetch_from_manager(function_name, image, env)
+            self.cache.set(function_name, host)
+            if not future.done():
+                future.set_result(host)
+            return host
+        except Exception as e:
+            # 待機者に例外を伝播
+            if not future.done():
+                future.set_exception(e)
+            # Future.exception() を呼ぶことで "never retrieved" 警告を抑制
+            # (リーダーが例外を処理したことを示す)
+            try:
+                future.exception()
+            except asyncio.InvalidStateError:
+                pass
+            raise
+        finally:
+            self._pending_requests.pop(function_name, None)
+
+    async def _fetch_from_manager(
+        self, function_name: str, image: Optional[str], env: Optional[Dict[str, str]]
+    ) -> str:
+        """Manager に問い合わせてホストを取得"""
         url = f"{MANAGER_URL}/containers/ensure"
         payload = {"function_name": function_name, "image": image, "env": env or {}}
 
@@ -66,16 +103,12 @@ class ManagerClient:
                 url,
                 json=payload,
                 headers=headers,
-                timeout=30.0,
+                timeout=MANAGER_TIMEOUT,
             )
             resp.raise_for_status()
             data = resp.json()
             host = data["host"]
-
-            # 3. 成功時にキャッシュ登録
-            self.cache.set(function_name, host)
-            logger.debug(f"Cached {function_name}: {host}")
-
+            logger.debug(f"Fetched from Manager: {function_name} -> {host}")
             return host
 
         except httpx.TimeoutException as e:
@@ -98,12 +131,8 @@ class ManagerClient:
             if status == 404:
                 raise FunctionNotFoundError(function_name) from e
             elif status in [400, 408, 409]:
-                # 400: Docker API エラー
-                # 408: タイムアウト
-                # 409: コンテナ競合
                 raise ManagerError(status, detail) from e
             else:
-                # その他のエラー
                 raise ManagerError(status, detail) from e
 
 

@@ -10,7 +10,6 @@ import time
 import logging
 from collections import OrderedDict
 from typing import Optional
-from threading import Lock
 
 logger = logging.getLogger("gateway.container_cache")
 
@@ -19,8 +18,8 @@ class ContainerHostCache:
     """
     TTL-based LRU cache for container host names.
 
-    Thread-safe cache that stores function_name -> host mappings
-    with automatic expiration and LRU eviction.
+    Note: This cache is designed for single-threaded async environments (FastAPI/uvicorn).
+    All operations are atomic in this context, so no locking is required.
     """
 
     def __init__(
@@ -45,7 +44,6 @@ class ContainerHostCache:
 
         # OrderedDict for LRU ordering: {function_name: (host, timestamp)}
         self._cache: OrderedDict[str, tuple[str, float]] = OrderedDict()
-        self._lock = Lock()
 
         logger.debug(
             f"ContainerHostCache initialized: max_size={max_size}, ttl={self.ttl_seconds}s"
@@ -61,22 +59,21 @@ class ContainerHostCache:
         Returns:
             Cached host string, or None if not found or expired
         """
-        with self._lock:
-            if function_name not in self._cache:
-                return None
+        if function_name not in self._cache:
+            return None
 
-            host, timestamp = self._cache[function_name]
+        host, timestamp = self._cache[function_name]
 
-            # Check TTL
-            if time.time() - timestamp > self.ttl_seconds:
-                # Expired - remove and return None
-                del self._cache[function_name]
-                logger.debug(f"Cache expired for {function_name}")
-                return None
+        # Check TTL
+        if time.time() - timestamp > self.ttl_seconds:
+            # Expired - remove and return None
+            del self._cache[function_name]
+            logger.debug(f"Cache expired for {function_name}")
+            return None
 
-            # Move to end (most recently used)
-            self._cache.move_to_end(function_name)
-            return host
+        # Move to end (most recently used)
+        self._cache.move_to_end(function_name)
+        return host
 
     def set(self, function_name: str, host: str) -> None:
         """
@@ -86,18 +83,17 @@ class ContainerHostCache:
             function_name: Lambda function name
             host: Container host name or IP
         """
-        with self._lock:
-            # If already exists, update and move to end
-            if function_name in self._cache:
-                del self._cache[function_name]
+        # If already exists, update and move to end
+        if function_name in self._cache:
+            del self._cache[function_name]
 
-            # Add new entry
-            self._cache[function_name] = (host, time.time())
+        # Add new entry
+        self._cache[function_name] = (host, time.time())
 
-            # Evict LRU if over capacity
-            while len(self._cache) > self.max_size:
-                evicted_key, _ = self._cache.popitem(last=False)
-                logger.debug(f"LRU evicted: {evicted_key}")
+        # Evict LRU if over capacity
+        while len(self._cache) > self.max_size:
+            evicted_key, _ = self._cache.popitem(last=False)
+            logger.debug(f"LRU evicted: {evicted_key}")
 
     def invalidate(self, function_name: str) -> None:
         """
@@ -106,13 +102,11 @@ class ContainerHostCache:
         Args:
             function_name: Lambda function name to invalidate
         """
-        with self._lock:
-            if function_name in self._cache:
-                del self._cache[function_name]
-                logger.debug(f"Cache invalidated: {function_name}")
+        if function_name in self._cache:
+            del self._cache[function_name]
+            logger.debug(f"Cache invalidated: {function_name}")
 
     def clear(self) -> None:
         """Clear all cache entries."""
-        with self._lock:
-            self._cache.clear()
-            logger.debug("Cache cleared")
+        self._cache.clear()
+        logger.debug("Cache cleared")
