@@ -15,7 +15,7 @@ class CustomJsonFormatter(logging.Formatter):
     Fields:
       - _time: ISO8601 timestamp (millisecond precision)
       - level: Log level
-      - logger: Logger name (e.g. uvicorn.access, gateway.main)
+      - logger: Logger name (e.g. uvicorn.access, manager.service)
       - message: Log message
       - request_id: Request ID (if available in record or via ContextVar)
     """
@@ -44,7 +44,6 @@ class CustomJsonFormatter(logging.Formatter):
             log_data["request_id"] = request_id
 
         # Include extra fields
-        # Exclude standard LogRecord attributes to avoid clutter
         standard_attrs = {
             "args",
             "asctime",
@@ -74,7 +73,6 @@ class CustomJsonFormatter(logging.Formatter):
             if key not in standard_attrs and not key.startswith("_"):
                 log_data[key] = value
 
-        # Handle exception info if present
         if record.exc_info:
             log_data["exception"] = self.formatException(record.exc_info)
 
@@ -84,9 +82,7 @@ class CustomJsonFormatter(logging.Formatter):
 def setup_logging(level=logging.INFO):
     """
     Basic logging setup.
-    Note: Main configuration should be handled via gateway_log.yaml and Uvicorn.
-    This function primarily ensures library log levels are sane if not configured elsewhere.
     """
-    # Set levels for noisy libraries
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("docker").setLevel(logging.WARNING)

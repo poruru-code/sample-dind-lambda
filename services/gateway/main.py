@@ -27,6 +27,7 @@ from .services.lambda_invoker import LambdaInvoker
 
 from .api.deps import UserIdDep, LambdaTargetDep
 from .core.logging_config import setup_logging
+from .core.request_context import set_request_id, clear_request_id
 from .core.exceptions import (
     global_exception_handler,
     http_exception_handler,
@@ -38,6 +39,11 @@ from .core.exceptions import (
 # Logger setup
 setup_logging()
 logger = logging.getLogger("gateway.main")
+
+
+# ===========================================
+# Middleware
+# ===========================================
 
 
 @asynccontextmanager
@@ -77,6 +83,50 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Lambda Gateway", version="2.0.0", lifespan=lifespan, root_path=config.root_path
 )
+
+
+# ミドルウェアの登録（デコレーター方式）
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    """
+    Middleware for Request ID tracing and structured access logging.
+    """
+    import time
+
+    start_time = time.time()
+
+    # X-Request-Id ヘッダーから取得、なければ生成
+    request_id = request.headers.get("X-Request-Id")
+    request_id = set_request_id(request_id)  # set_request_id は設定した ID を返す
+
+    # レスポンスヘッダーにも付与するためにレスポンスを待機
+    try:
+        response = await call_next(request)
+        response.headers["X-Request-Id"] = request_id
+
+        # Calculate process time
+        process_time = time.time() - start_time
+        process_time_ms = round(process_time * 1000, 2)
+
+        # Structured Access Log
+        # uvicorn.access is disabled (WARNING level), so this is the main access log.
+        logger.info(
+            f"{request.method} {request.url.path} {response.status_code}",
+            extra={
+                "method": request.method,
+                "path": request.url.path,
+                "status": response.status_code,
+                "latency_ms": process_time_ms,
+                "user_agent": request.headers.get("user-agent"),
+                "client_ip": request.client.host if request.client else None,
+            },
+        )
+
+        return response
+    finally:
+        # クリーンアップ
+        clear_request_id()
+
 
 # 例外ハンドラの登録
 app.add_exception_handler(Exception, global_exception_handler)

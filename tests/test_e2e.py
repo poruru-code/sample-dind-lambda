@@ -28,6 +28,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # テスト用設定
 GATEWAY_URL = os.getenv("GATEWAY_URL", "https://localhost:443")
+VICTORIALOGS_URL = os.getenv("VICTORIALOGS_URL", "http://localhost:9428")
 API_KEY = config.X_API_KEY
 VERIFY_SSL = False
 
@@ -59,6 +60,61 @@ def get_auth_token() -> str:
     )
     assert response.status_code == 200, f"Auth failed: {response.text}"
     return response.json()["AuthenticationResult"]["IdToken"]
+
+
+def query_victorialogs(request_id: str, timeout: int = 30) -> dict:
+    """
+    VictoriaLogs から RequestID を含むログをクエリ
+
+    Args:
+        request_id: 検索する RequestID
+        timeout: タイムアウト秒数
+
+    Returns:
+        クエリ結果の dict (hits フィールドにログが含まれる)
+    """
+    # VictoriaLogs LogsQL クエリ (フィールド名:値 の形式)
+    query = f'request_id:"{request_id}"'
+
+    params = {
+        "query": query,
+        "limit": 100,  # 最大100件取得
+    }
+
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            # POST でクエリを送信 (公式推奨)
+            response = requests.post(
+                f"{VICTORIALOGS_URL}/select/logsql/query",
+                data=params,
+                timeout=5,
+            )
+
+            if response.status_code == 200:
+                # VictoriaLogs は JSON Lines 形式で返す（各行が1つのJSONオブジェクト）
+                lines = response.text.strip().split("\n")
+                hits = []
+                for line in lines:
+                    if line:
+                        try:
+                            hits.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            continue
+
+                # ログが見つかったら返す
+                if hits:
+                    return {"hits": hits}
+
+            # ログがまだ届いていない可能性があるので少し待つ
+            time.sleep(1)
+
+        except Exception as e:
+            print(f"VictoriaLogs query error: {e}")
+            time.sleep(1)
+
+    # タイムアウトしても空の結果を返す
+    return {"hits": []}
 
 
 class TestE2E:
@@ -255,6 +311,92 @@ class TestE2E:
             time.sleep(1)
 
         assert found, "Async execution failed: File not found in S3"
+
+    def test_request_id_tracing_in_victorialogs(self, gateway_health):
+        """
+        E2E: VictoriaLogs での RequestID トレーシング検証
+
+        カスタム RequestID を指定してリクエストし、VictoriaLogs から
+        Gateway と Manager の両方のログに同じ RequestID が記録されていることを確認
+        """
+        import uuid
+
+        # カスタム RequestID を生成
+        custom_request_id = f"e2e-test-{uuid.uuid4()}"
+
+        # 認証
+        token = get_auth_token()
+
+        # カスタム RequestID を指定してリクエスト
+        response = requests.post(
+            f"{GATEWAY_URL}/api/s3/test",
+            json={"action": "test"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "X-Request-Id": custom_request_id,
+            },
+            verify=VERIFY_SSL,
+        )
+
+        # リクエスト成功確認
+        assert response.status_code == 200, f"Request failed: {response.text}"
+
+        # レスポンスヘッダーに同じ RequestID が返されることを確認
+        assert response.headers.get("X-Request-Id") == custom_request_id, (
+            f"Response RequestID mismatch: {response.headers.get('X-Request-Id')}"
+        )
+
+        # VictoriaLogs からログをクエリ（ログが届くまで最大30秒待つ）
+        start_time = time.time()
+        timeout = 30
+        gateway_logs = []
+        manager_logs = []
+        lambda_logs = []
+
+        while time.time() - start_time < timeout:
+            logs = query_victorialogs(custom_request_id, timeout=1)
+            hits = logs.get("hits", [])
+
+            if not hits:
+                time.sleep(1)
+                continue
+
+            gateway_logs = []
+            manager_logs = []
+            lambda_logs = []
+
+            for log in hits:
+                c_name = log.get("container_name", "")
+
+                if not c_name and isinstance(log.get("_stream"), dict):
+                    c_name = log.get("_stream").get("container_name", "")
+
+                if not c_name and isinstance(log.get("_stream"), str):
+                    if "gateway" in log.get("_stream", ""):
+                        c_name = "gateway"
+                    elif "manager" in log.get("_stream", ""):
+                        c_name = "manager"
+                    elif "lambda" in log.get("_stream", ""):
+                        c_name = "lambda"
+
+                c_name = c_name.lower()
+
+                if "gateway" in c_name:
+                    gateway_logs.append(log)
+                elif "manager" in c_name:
+                    manager_logs.append(log)
+                elif "lambda" in c_name:
+                    lambda_logs.append(log)
+
+            if gateway_logs and manager_logs and lambda_logs:
+                break
+
+            time.sleep(2)
+
+        # すべてのコンポーネントでログが記録されていることを確認
+        assert len(gateway_logs) > 0, "No Gateway logs found with the RequestID"
+        assert len(manager_logs) > 0, "No Manager logs found with the RequestID"
+        assert len(lambda_logs) > 0, "No Lambda logs found with the RequestID"
 
 
 if __name__ == "__main__":

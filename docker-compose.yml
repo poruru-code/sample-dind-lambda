@@ -73,6 +73,23 @@ services:
       - internal_network # Lambda間通信
 
   # ============================================
+  # Fluent Bit (Log Aggregator)
+  # ============================================
+  fluent-bit:
+    image: fluent/fluent-bit:latest
+    container_name: fluent-bit
+    ports:
+      - "24224:24224"  # Forward protocol
+    volumes:
+      - ./config/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - ./config/parsers.conf:/fluent-bit/etc/parsers.conf:ro
+      - ./config/append_container_name.lua:/fluent-bit/etc/append_container_name.lua:ro
+    networks:
+      - external_network
+      - internal_network
+    restart: unless-stopped
+
+  # ============================================
   # VictoriaLogs
   # ============================================
   victorialogs:
@@ -120,7 +137,15 @@ services:
       - GATEWAY_INTERNAL_URL=https://onpre-gateway
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-secret-key-change-in-production}
       - X_API_KEY=${X_API_KEY:-dev-api-key-change-in-production}
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: "localhost:24224"
+        tag: "gateway"
+        fluentd-async: "true"
     depends_on:
+      fluent-bit:
+        condition: service_started
       manager:
         condition: service_started
       database:
@@ -147,6 +172,12 @@ services:
     environment:
       - CONTAINERS_NETWORK=${LAMBDA_NETWORK:-onpre-internal-network} # Internal test network
       - IDLE_TIMEOUT_MINUTES=${IDLE_TIMEOUT_MINUTES:-5}
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: "localhost:24224"
+        tag: "manager"
+        fluentd-async: "true"
     restart: unless-stopped
 
 volumes:

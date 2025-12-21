@@ -13,22 +13,14 @@ from typing import Dict, Any
 from fastapi import Request
 import httpx
 
+from .request_context import get_request_id
+
 
 def build_event(
     request: Request, body: bytes, user_id: str, path_params: Dict[str, str], route_path: str
 ) -> Dict[str, Any]:
     """
     API Gateway Lambda Proxy Integration互換のeventオブジェクトを構築
-
-    Args:
-        request: FastAPIリクエストオブジェクト
-        body: リクエストボディ（バイト列）
-        user_id: 認証済みユーザーID
-        path_params: パスパラメータ
-        route_path: マッチしたルートパターン
-
-    Returns:
-        Lambda関数に渡すeventオブジェクト
     """
     # gzip圧縮されているか確認
     is_base64 = "gzip" in request.headers.get("content-encoding", "").lower()
@@ -55,14 +47,15 @@ def build_event(
     # ヘッダー
     headers = {}
     multi_headers = {}
-    # FastAPI/Starletteのheaders.items()は正規化されており、
-    # 同一名のヘッダーは通常カンマ区切りで取得されるか、個別に取得する必要がある。
-    # ここではgetlist相当の処理を自前で行うか、標準的なitems()から構築
     for key in request.headers.keys():
-        # Starlette Headers.getlist(key) は全ての値を取得する
         values = request.headers.getlist(key)
         headers[key] = values[-1] if values else ""
         multi_headers[key] = values
+
+    # RequestID取得 (Contextから優先的に取得)
+    request_id = get_request_id()
+    if not request_id:
+        request_id = f"req-{int(time.time() * 1000)}"
 
     event = {
         "resource": route_path or str(request.url.path),
@@ -76,7 +69,7 @@ def build_event(
         "requestContext": {
             "identity": {"sourceIp": request.client.host if request.client else "unknown"},
             "authorizer": {"claims": {"cognito:username": user_id}, "cognito:username": user_id},
-            "requestId": f"req-{int(time.time() * 1000)}",
+            "requestId": request_id,
         },
         "body": body_content,
         "isBase64Encoded": is_base64,
@@ -89,7 +82,7 @@ def resolve_container_ip(container_name: str) -> str:
     """
     コンテナ名からIPアドレスを解決
 
-    Gatewayが内部ネットワーク（LAMBDA_NETWORK）に参加しているため、
+    Gatewayが内部ネットワーク(LAMBDA_NETWORK)に参加しているため、
     DockerのDNS機能によりコンテナ名で直接アクセス可能。
     そのため、基本的にはコンテナ名をそのまま返す。
 

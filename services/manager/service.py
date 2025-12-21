@@ -64,6 +64,19 @@ class ContainerManager:
 
             except docker.errors.NotFound:
                 logger.info(f"Cold Start: Creating and starting container {name}...")
+
+                # Configure Fluentd logging driver
+                from docker.types import LogConfig
+
+                log_config = LogConfig(
+                    type=LogConfig.types.FLUENTD,
+                    config={
+                        "fluentd-address": "localhost:24224",
+                        "tag": f"lambda.{name}",
+                        "fluentd-async": "true",
+                    },
+                )
+
                 container = await self.docker.run_container(
                     image,
                     name=name,
@@ -72,6 +85,7 @@ class ContainerManager:
                     network=self.network,
                     restart_policy={"Name": "no"},
                     labels={"created_by": "sample-dind"},
+                    log_config=log_config,
                 )
 
             # Reload container to get latest attributes (IP) and check readiness

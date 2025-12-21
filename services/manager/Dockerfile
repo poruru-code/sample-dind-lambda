@@ -12,5 +12,6 @@ RUN uv pip compile pyproject.toml -o requirements.txt && \
     uv pip install --system --break-system-packages -r requirements.txt
 
 COPY services/manager /app/services/manager
+COPY config /app/config
 
-CMD ["uvicorn", "services.manager.main:app", "--host", "0.0.0.0", "--port", "8081"]
+CMD ["uvicorn", "services.manager.main:app", "--host", "0.0.0.0", "--port", "8081", "--log-config", "/app/config/manager_log.yaml"]
