@@ -1,0 +1,87 @@
+--progress is a global compose flag, better use `docker compose --progress xx build ...
+#1 [internal] load local bake definitions
+#1 reading from stdin 1.06kB 0.0s done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 976B done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/python:3.12-slim
+#3 DONE 0.7s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 382B done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 2.15kB done
+#5 DONE 0.0s
+
+#6 [1/8] FROM docker.io/library/python:3.12-slim@sha256:fa48eefe2146644c2308b909d6bb7651a768178f84fc9550dcd495e4d6d84d01
+#6 resolve docker.io/library/python:3.12-slim@sha256:fa48eefe2146644c2308b909d6bb7651a768178f84fc9550dcd495e4d6d84d01 0.0s done
+#6 DONE 0.0s
+
+#7 [2/8] WORKDIR /app
+#7 CACHED
+
+#8 [3/8] RUN pip install --no-cache-dir uv
+#8 1.827 Collecting uv
+#8 1.957   Downloading uv-0.9.18-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (11 kB)
+#8 1.989 Downloading uv-0.9.18-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (22.2 MB)
+#8 2.824    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 22.2/22.2 MB 29.1 MB/s eta 0:00:00
+#8 2.850 Installing collected packages: uv
+#8 3.195 Successfully installed uv-0.9.18
+#8 3.195 WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+#8 3.374 
+#8 3.374 [notice] A new release of pip is available: 25.0.1 -> 25.3
+#8 3.374 [notice] To update, run: pip install --upgrade pip
+#8 DONE 3.6s
+
+#9 [4/8] COPY pyproject.toml /app/
+#9 DONE 0.1s
+
+#10 [5/8] RUN uv pip compile pyproject.toml -o requirements.txt &&     uv pip install --system --break-system-packages -r requirements.txt
+#10 0.452 warning: Failed to parse `pyproject.toml` during settings discovery:
+#10 0.452   TOML parse error at line 66, column 2
+#10 0.452      |
+#10 0.452   66 | 
+#10 0.452      |  ^
+#10 0.452   unclosed array, expected `]`
+#10 0.452 
+#10 0.455 error: Failed to parse: `pyproject.toml`
+#10 0.455   Caused by: TOML parse error at line 66, column 2
+#10 0.455    |
+#10 0.455 66 | 
+#10 0.455    |  ^
+#10 0.455 unclosed array, expected `]`
+#10 ERROR: process "/bin/sh -c uv pip compile pyproject.toml -o requirements.txt &&     uv pip install --system --break-system-packages -r requirements.txt" did not complete successfully: exit code: 2
+------
+ > [5/8] RUN uv pip compile pyproject.toml -o requirements.txt &&     uv pip install --system --break-system-packages -r requirements.txt:
+0.452   66 | 
+0.452      |  ^
+0.452   unclosed array, expected `]`
+0.452 
+0.455 error: Failed to parse: `pyproject.toml`
+0.455   Caused by: TOML parse error at line 66, column 2
+0.455    |
+0.455 66 | 
+0.455    |  ^
+0.455 unclosed array, expected `]`
+------
+Dockerfile:15
+
+--------------------
+
+  14 |     # 注意: requirements.txt 生成のために一時ファイルが必要な場合があるため
+
+  15 | >>> RUN uv pip compile pyproject.toml -o requirements.txt && \
+
+  16 | >>>     uv pip install --system --break-system-packages -r requirements.txt
+
+  17 |     
+
+--------------------
+
+failed to solve: process "/bin/sh -c uv pip compile pyproject.toml -o requirements.txt &&     uv pip install --system --break-system-packages -r requirements.txt" did not complete successfully: exit code: 2
+
