@@ -6,10 +6,10 @@ pydantic-settings を使用して型安全性とデフォルト値を管理し�
 """
 
 from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from services.common.core.config import BaseAppConfig
 
 
-class GatewayConfig(BaseSettings):
+class GatewayConfig(BaseAppConfig):
     """
     Gatewayサービスの設定管理
     """
@@ -54,13 +54,13 @@ class GatewayConfig(BaseSettings):
     GATEWAY_INTERNAL_URL: str = Field(
         default="http://gateway:8080", description="コンテナから見たGateway URL"
     )
+    MANAGER_URL: str = Field(default="http://manager:8081", description="ManagerサービスURL")
+    MANAGER_TIMEOUT: float = Field(default=30.0, description="Manager通信タイムアウト(秒)")
 
     # FastAPI設定
     root_path: str = Field(default="", description="APIのルートパス（プロキシ用）")
 
-    model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", case_sensitive=True, extra="ignore"
-    )
+    # model_config is inherited
 
 
 # シングルトンとして設定をロード

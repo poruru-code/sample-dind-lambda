@@ -49,3 +49,31 @@ class DockerAdaptor:
     async def kill_container(self, container: Any) -> None:
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, container.kill)
+
+    async def prune_containers(self) -> None:
+        """
+        ゾンビコンテナ（label=created_by=sample-dind）を削除します。
+
+        非同期処理のため、run_in_executorを使用してブロッキングを回避します。
+        """
+
+        def _prune():
+            """同期的なコンテナ削除処理"""
+            try:
+                containers = self._client.containers.list(
+                    all=True,  # Include stopped ones
+                    filters={"label": "created_by=sample-dind"},
+                )
+                for container in containers:
+                    logger.info(f"Removing zombie container: {container.name}")
+                    try:
+                        if container.status == "running":
+                            container.kill()
+                        container.remove(force=True)
+                    except Exception as e:
+                        logger.error(f"Error removing {container.name}: {e}")
+            except Exception as e:
+                logger.error(f"Failed to prune containers: {e}")
+
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, _prune)

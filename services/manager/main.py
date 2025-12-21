@@ -1,8 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
-from fastapi.concurrency import run_in_threadpool
 import logging
-import os
 from contextlib import asynccontextmanager
 from typing import Optional, Dict
 import asyncio
@@ -10,6 +8,7 @@ import asyncio
 from .service import ContainerManager
 import docker.errors
 from services.common.core.request_context import set_request_id, clear_request_id, get_request_id
+from .config import config
 
 from .core.logging_config import setup_logging
 
@@ -19,15 +18,12 @@ logger = logging.getLogger("manager.main")
 # レベル設定などはYAML側で行う
 
 
-IDLE_TIMEOUT_MINUTES = int(os.environ.get("IDLE_TIMEOUT_MINUTES", 5))
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup Logic: External reconciliation
     try:
-        # prune_managed_containers is sync, keep using threadpool
-        await run_in_threadpool(manager.prune_managed_containers)
+        # prune_managed_containers is now async
+        await manager.prune_managed_containers()
     except Exception as e:
         logger.error(f"Failed to prune containers on startup: {e}", exc_info=True)
 
@@ -40,10 +36,10 @@ async def lifespan(app: FastAPI):
         "interval",
         minutes=1,
         id="idle_cleanup",
-        args=[IDLE_TIMEOUT_MINUTES * 60],
+        args=[config.IDLE_TIMEOUT_MINUTES * 60],
     )
     scheduler.start()
-    logger.info(f"Idle cleanup scheduler started (timeout: {IDLE_TIMEOUT_MINUTES}m)")
+    logger.info(f"Idle cleanup scheduler started (timeout: {config.IDLE_TIMEOUT_MINUTES}m)")
 
     yield
     # Shutdown logic

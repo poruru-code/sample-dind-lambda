@@ -1,7 +1,6 @@
 from typing import Optional, Dict
 import asyncio
 import httpx
-import os
 import logging
 from .core.exceptions import (
     FunctionNotFoundError,
@@ -11,11 +10,9 @@ from .core.exceptions import (
 )
 from .services.container_cache import ContainerHostCache
 from services.common.core.request_context import get_request_id
+from .config import config
 
 logger = logging.getLogger("gateway.client")
-
-MANAGER_URL = os.getenv("MANAGER_URL", "http://manager:8081")
-MANAGER_TIMEOUT = float(os.getenv("MANAGER_TIMEOUT", "30"))
 
 
 class ManagerClient:
@@ -89,7 +86,7 @@ class ManagerClient:
         self, function_name: str, image: Optional[str], env: Optional[Dict[str, str]]
     ) -> str:
         """Manager に問い合わせてホストを取得"""
-        url = f"{MANAGER_URL}/containers/ensure"
+        url = f"{config.MANAGER_URL}/containers/ensure"
         payload = {"function_name": function_name, "image": image, "env": env or {}}
 
         # X-Request-Id ヘッダーを伝播
@@ -103,7 +100,7 @@ class ManagerClient:
                 url,
                 json=payload,
                 headers=headers,
-                timeout=MANAGER_TIMEOUT,
+                timeout=config.MANAGER_TIMEOUT,
             )
             resp.raise_for_status()
             data = resp.json()

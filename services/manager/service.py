@@ -1,12 +1,12 @@
 import docker.errors
 import time
 import logging
-import os
 import asyncio
 from typing import Dict, Optional
 
 import httpx
 from .docker_adaptor import DockerAdaptor
+from .config import config
 
 logger = logging.getLogger("manager.service")
 
@@ -23,8 +23,8 @@ class ContainerManager:
         self.locks: Dict[str, asyncio.Lock] = {}
         self._locks_lock = asyncio.Lock()
 
-        # Use env var or default to 'bridge' if not specified.
-        self.network = network or os.environ.get("CONTAINERS_NETWORK") or "bridge"
+        # Use config or default to 'bridge' if not specified.
+        self.network = network or config.CONTAINERS_NETWORK or "bridge"
         logger.info(f"ContainerManager initialized with network: {self.network}")
 
     async def ensure_container_running(
@@ -152,36 +152,10 @@ class ContainerManager:
         if to_remove:
             logger.info(f"Cleanup completed. Removed: {to_remove}")
 
-    def prune_managed_containers(self):
+    async def prune_managed_containers(self):
         """
         Kills and removes containers managed by this service (zombies).
-        WARNING: This is synchronous as currently written, but usually called at startup.
-        Should be updated to async if possible, but startup might be sync.
-        Original code was running in threadpool.
-        Let's keep it sync or make it async?
-        The plan said "convert ContainerManager methods to async".
-        But prune is called from lifecycle.
-
-        If we make it async, we need to update main.py to await it.
+        Now delegates to DockerAdaptor to avoid direct _client access.
         """
-        # For now, let's leave it sync or use the sync client?
-        # But we replaced self.client with self.docker (Adaptor).
-        # Adaptor has `_client` which is sync.
-
         logger.info("Pruning zombie containers...")
-        try:
-            # Direct access to sync client for pruning (used at startup)
-            containers = self.docker._client.containers.list(
-                all=True,  # Include stopped ones
-                filters={"label": "created_by=sample-dind"},
-            )
-            for container in containers:
-                logger.info(f"Removing zombie container: {container.name}")
-                try:
-                    if container.status == "running":
-                        container.kill()
-                    container.remove(force=True)
-                except Exception as e:
-                    logger.error(f"Error removing {container.name}: {e}")
-        except Exception as e:
-            logger.error(f"Failed to prune containers: {e}")
+        await self.docker.prune_containers()
