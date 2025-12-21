@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI):
     """アプリケーションのライフサイクル管理"""
     # Initialize shared HTTP client
     # timeout config can be fine-tuned
-    client = httpx.AsyncClient(timeout=30.0)
+    client = httpx.AsyncClient(timeout=config.LAMBDA_INVOKE_TIMEOUT)
 
     # Initialize Services
     function_registry = FunctionRegistry()

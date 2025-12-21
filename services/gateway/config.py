@@ -48,6 +48,7 @@ class GatewayConfig(BaseAppConfig):
     GATEWAY_INTERNAL_URL: str = Field(..., description="コンテナから見たGateway URL")
     MANAGER_URL: str = Field(..., description="ManagerサービスURL")
     MANAGER_TIMEOUT: float = Field(default=30.0, description="Manager通信タイムアウト(秒)")
+    LAMBDA_INVOKE_TIMEOUT: float = Field(default=30.0, description="Lambda呼び出しタイムアウト(秒)")
 
     # FastAPI設定
     root_path: str = Field(default="", description="APIのルートパス（プロキシ用）")

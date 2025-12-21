@@ -7,7 +7,7 @@ Lambda関数からRustFSへのS3互換APIアクセスを提供します。
 import boto3
 import botocore
 import logging
-import os
+from .layer_config import config
 
 logger = logging.getLogger(__name__)
 
@@ -15,23 +15,15 @@ logger = logging.getLogger(__name__)
 def init_storage():
     """
     S3互換ストレージクライアントを初期化して返す
-
-    環境変数:
-        S3_ENDPOINT: S3互換エンドポイント (デフォルト: http://onpre-storage:9000)
-        RUSTFS_ROOT_USER: 認証ユーザー名 (デフォルト: rustfsadmin)
-        RUSTFS_ROOT_PASSWORD: 認証パスワード (デフォルト: rustfsadmin)
-
-    Returns:
-        boto3.client: S3クライアント
     """
-    s3_endpoint = os.environ.get("S3_ENDPOINT", "http://onpre-storage:9000")
+    s3_endpoint = config.S3_ENDPOINT
 
     s3_client = boto3.client(
         "s3",
         endpoint_url=s3_endpoint,
-        aws_access_key_id=os.environ.get("RUSTFS_ROOT_USER", "rustfsadmin"),
-        aws_secret_access_key=os.environ.get("RUSTFS_ROOT_PASSWORD", "rustfsadmin"),
-        region_name="ap-northeast-1",
+        aws_access_key_id=config.RUSTFS_ROOT_USER,
+        aws_secret_access_key=config.RUSTFS_ROOT_PASSWORD,
+        region_name=config.AWS_REGION,
         config=botocore.config.Config(signature_version="s3v4", s3={"addressing_style": "path"}),
     )
 

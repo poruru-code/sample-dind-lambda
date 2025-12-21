@@ -5,7 +5,6 @@ boto3 を使用して他のLambda関数を呼び出すヘルパー関数を提�
 ローカル環境（Gateway）への接続設定を隠蔽します。
 """
 
-import os
 import json
 import logging
 from typing import Any
@@ -16,6 +15,8 @@ from botocore.config import Config
 # SSL警告を抑制（自己署名証明書使用時）
 import urllib3
 
+from .layer_config import config
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
@@ -24,22 +25,19 @@ logger = logging.getLogger(__name__)
 def init_lambda_client():
     """
     ローカルGatewayに向けたLambdaクライアントを初期化
-
-    環境変数 LAMBDA_ENDPOINT でエンドポイントを指定可能
-    （デフォルト: https://onpre-gateway:443）
     """
-    endpoint = os.environ.get("LAMBDA_ENDPOINT", "https://onpre-gateway:443")
+    endpoint = config.LAMBDA_ENDPOINT
     logger.info(f"Initializing Lambda client with endpoint: {endpoint}")
 
     return boto3.client(
         "lambda",
         endpoint_url=endpoint,
         verify=False,  # 自己署名証明書対応
-        region_name="ap-northeast-1",
+        region_name=config.AWS_REGION,
         config=Config(
-            retries={"max_attempts": 3},
-            connect_timeout=5,
-            read_timeout=300,
+            retries={"max_attempts": config.LAMBDA_RETRIES},
+            connect_timeout=config.LAMBDA_CONNECT_TIMEOUT,
+            read_timeout=config.LAMBDA_READ_TIMEOUT,
         ),
     )
 

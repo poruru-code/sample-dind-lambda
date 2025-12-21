@@ -13,6 +13,10 @@ class ManagerConfig(BaseAppConfig):
 
     IDLE_TIMEOUT_MINUTES: int = Field(default=5, description="アイドルコンテナのタイムアウト(分)")
     CONTAINERS_NETWORK: str = Field(..., description="コンテナネットワーク名")
+    CONTAINER_READINESS_TIMEOUT: float = Field(
+        default=30.0, description="コンテナ起動待機タイムアウト(秒)"
+    )
+    PING_TIMEOUT: float = Field(default=1.0, description="コンテナPing確認タイムアウト(秒)")
 
 
 # シングルトンとして設定をロード

@@ -41,19 +41,33 @@ AUTH_PASS = os.environ["AUTH_PASS"]
 
 VERIFY_SSL = False
 
+# Timeouts & Retries
+DEFAULT_REQUEST_TIMEOUT = 5
+HEALTH_CHECK_RETRIES = 10
+HEALTH_CHECK_INTERVAL = 3
+VICTORIALOGS_QUERY_TIMEOUT = 30
+LOG_WAIT_TIMEOUT = 45
+SCYLLA_WAIT_RETRIES = 40
+SCYLLA_WAIT_INTERVAL = 5
+ASYNC_WAIT_RETRIES = 60
+MANAGER_RESTART_WAIT = 8
+STABILIZATION_WAIT = 3
+
 
 @pytest.fixture(scope="module")
 def gateway_health():
     """Gatewayのヘルスチェック"""
-    for i in range(10):
+    for i in range(HEALTH_CHECK_RETRIES):
         try:
-            response = requests.get(f"{GATEWAY_URL}/health", timeout=5, verify=VERIFY_SSL)
+            response = requests.get(
+                f"{GATEWAY_URL}/health", timeout=DEFAULT_REQUEST_TIMEOUT, verify=VERIFY_SSL
+            )
             if response.status_code == 200:
                 return True
             print(f"Gateway returned status: {response.status_code}")
         except Exception as e:
-            print(f"Waiting for Gateway... ({i + 1}/10) Error: {e}")
-            time.sleep(3)
+            print(f"Waiting for Gateway... ({i + 1}/{HEALTH_CHECK_RETRIES}) Error: {e}")
+            time.sleep(HEALTH_CHECK_INTERVAL)
     pytest.skip(
         f"Gateway is not running on {GATEWAY_URL}. Start with: docker compose up -d gateway"
     )
@@ -71,7 +85,7 @@ def get_auth_token() -> str:
     return response.json()["AuthenticationResult"]["IdToken"]
 
 
-def query_victorialogs(request_id: str, timeout: int = 30) -> dict:
+def query_victorialogs(request_id: str, timeout: int = VICTORIALOGS_QUERY_TIMEOUT) -> dict:
     """
     VictoriaLogs から RequestID を含むログをクエリ
 
@@ -97,7 +111,7 @@ def query_victorialogs(request_id: str, timeout: int = 30) -> dict:
             response = requests.post(
                 f"{VICTORIALOGS_URL}/select/logsql/query",
                 data=params,
-                timeout=5,
+                timeout=DEFAULT_REQUEST_TIMEOUT,
             )
 
             if response.status_code == 200:
@@ -189,7 +203,7 @@ class TestE2E:
 
         # ScyllaDBの起動待ち（Lambdaが起動するまでリトライ）
         # WindowsのDocker Desktop (WSL2) ではScyllaDBの起動に3-5分かかる場合がある
-        max_retries = 40
+        max_retries = SCYLLA_WAIT_RETRIES
         for i in range(max_retries):
             try:
                 response = requests.post(
@@ -213,7 +227,7 @@ class TestE2E:
                 response = None  # Reset response
 
             print(f"Waiting for Lambda/ScyllaDB... ({i + 1}/{max_retries})")
-            time.sleep(5)
+            time.sleep(SCYLLA_WAIT_INTERVAL)
 
         if response is None:
             pytest.fail("Lambda integration failed: No response received")
@@ -303,7 +317,7 @@ class TestE2E:
         print("Waiting for async execution...")
         time.sleep(2)  # Initial wait
 
-        max_retries = 60
+        max_retries = ASYNC_WAIT_RETRIES
         found = False
         for i in range(max_retries):
             check_resp = requests.post(
@@ -357,7 +371,7 @@ class TestE2E:
 
         # VictoriaLogs からログをクエリ（ログが届くまで最大30秒待つ）
         start_time = time.time()
-        timeout = 30
+        timeout = VICTORIALOGS_QUERY_TIMEOUT
         gateway_logs = []
         manager_logs = []
         lambda_logs = []
@@ -445,7 +459,7 @@ class TestE2E:
 
         # VictoriaLogs からログをクエリ
         start_time = time.time()
-        timeout = 45  # 少し長めに待つ
+        timeout = LOG_WAIT_TIMEOUT  # 少し長めに待つ
 
         while time.time() - start_time < timeout:
             logs = query_victorialogs(validation_id, timeout=1)
@@ -528,12 +542,14 @@ class TestE2E:
         assert restart_result.returncode == 0, f"Failed to restart Manager: {restart_result.stderr}"
 
         # Manager起動待ち（より長めに待つ）
-        time.sleep(8)
+        time.sleep(MANAGER_RESTART_WAIT)
 
         # Managerのヘルスチェック（間接的）
         for i in range(15):
             try:
-                health_resp = requests.get(f"{GATEWAY_URL}/health", verify=VERIFY_SSL, timeout=3)
+                health_resp = requests.get(
+                    f"{GATEWAY_URL}/health", verify=VERIFY_SSL, timeout=DEFAULT_REQUEST_TIMEOUT
+                )
                 if health_resp.status_code == 200:
                     break
             except Exception:
@@ -541,7 +557,7 @@ class TestE2E:
             time.sleep(2)
 
         # 追加の安定化待ち（Gatewayは起動していてもManagerとの接続が安定していない可能性）
-        time.sleep(3)
+        time.sleep(STABILIZATION_WAIT)
 
         # 3. 再起動後の呼び出し（コンテナ復元確認）
         print("Step 3: Post-restart invocation (should be warm start)...")

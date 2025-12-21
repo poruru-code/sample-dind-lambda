@@ -84,7 +84,7 @@ class CustomJsonFormatter(logging.Formatter):
         return json.dumps(log_data, ensure_ascii=False)
 
 
-def setup_logging(config_path: str):
+def setup_logging(config_path: str = "logging.yml"):
     """
     YAML設定ファイルを読み込み、環境変数を置換した上でロギングを初期化します。
     """

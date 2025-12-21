@@ -127,14 +127,16 @@ class ContainerManager:
     ) -> None:
         """POST /invocations でRIEの起動を確認（AWS RIE標準方式）"""
         port = port or config.LAMBDA_PORT
-        timeout = timeout or config.READINESS_TIMEOUT
+        timeout = timeout or int(config.CONTAINER_READINESS_TIMEOUT)
         url = f"http://{host}:{port}/2015-03-31/functions/function/invocations"
         start = time.time()
 
         async with httpx.AsyncClient() as client:
             while time.time() - start < timeout:
                 try:
-                    response = await client.post(url, json={"ping": True}, timeout=1.0)
+                    response = await client.post(
+                        url, json={"ping": True}, timeout=config.PING_TIMEOUT
+                    )
                     if response.status_code == 200:
                         return
                 except (httpx.RequestError, httpx.TimeoutException):

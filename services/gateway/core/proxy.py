@@ -114,7 +114,9 @@ async def proxy_to_lambda(
 
     headers = {"Content-Type": "application/json"}
 
-    response = await client.post(rie_url, json=event, headers=headers, timeout=30.0)
+    response = await client.post(
+        rie_url, json=event, headers=headers, timeout=config.LAMBDA_INVOKE_TIMEOUT
+    )
 
     return response
 

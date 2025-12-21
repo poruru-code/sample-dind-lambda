@@ -19,35 +19,22 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
+from dotenv import load_dotenv
+
 # プロジェクトルートを取得
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 CERTS_DIR = PROJECT_ROOT / "certs"
 
 
-# .env.test があれば読み込む（簡易ローダー）
-env_test_path = PROJECT_ROOT / ".env.test"
-if env_test_path.exists():
-    print(f"Loading environment variables from {env_test_path}")
-    with open(env_test_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if "=" in line:
-                key, value = line.split("=", 1)
-                os.environ.setdefault(key.strip(), value.strip())
+def load_environment(env_file_path: Path):
+    """環境変数ファイルを読み込む (python-dotenv使用)"""
+    if env_file_path.exists():
+        print(f"Loading environment variables from {env_file_path}")
+        # override=False: 既存の環境変数（シェルから渡されたもの）を優先
+        load_dotenv(env_file_path, override=False)
+    else:
+        print(f"Warning: Environment file {env_file_path} not found.")
 
-# フォールバック（.env.testがない場合用）
-os.environ.setdefault("JWT_SECRET_KEY", "dev-secret-key-change-in-production")
-os.environ.setdefault("X_API_KEY", "dev-api-key-change-in-production")
-os.environ.setdefault("AUTH_USER", "admin")
-os.environ.setdefault("AUTH_PASS", "password")
-os.environ.setdefault("LOG_LEVEL", "DEBUG")
-os.environ.setdefault("CONTAINERS_NETWORK", "test-network")
-os.environ.setdefault("LAMBDA_NETWORK", "test-internal-network")
-os.environ.setdefault("EXTERNAL_NETWORK", "test-external")
-os.environ.setdefault("MANAGER_URL", "http://localhost:8081")  # テストからはlocalhostでアクセス
-os.environ.setdefault("GATEWAY_INTERNAL_URL", "https://localhost:443")
 
 # 設定
 GATEWAY_PORT = os.environ.get("GATEWAY_PORT", "443")
@@ -57,8 +44,13 @@ SCYLLADB_PORT = os.environ.get("SCYLLADB_PORT", "8001")
 SCYLLADB_API_URL = f"http://localhost:{SCYLLADB_PORT}"
 
 VICTORIALOGS_PORT = os.environ.get("VICTORIALOGS_PORT", "9428")
+
+# Constants
 MAX_RETRIES = 60
 RETRY_INTERVAL = 3  # seconds
+HEALTH_CHECK_TIMEOUT = 5
+SSL_CERT_VALIDITY_DAYS = 365
+SSL_KEY_SIZE = 4096
 
 
 def run_command(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess:
@@ -135,7 +127,7 @@ def generate_ssl_certificate():
     # RSA秘密鍵を生成
     private_key = rsa.generate_private_key(
         public_exponent=65537,
-        key_size=4096,
+        key_size=SSL_KEY_SIZE,
     )
 
     # SAN (Subject Alternative Name) を構築
@@ -172,7 +164,7 @@ def generate_ssl_certificate():
         .public_key(private_key.public_key())
         .serial_number(x509.random_serial_number())
         .not_valid_before(datetime.now(timezone.utc))
-        .not_valid_after(datetime.now(timezone.utc) + timedelta(days=365))
+        .not_valid_after(datetime.now(timezone.utc) + timedelta(days=SSL_CERT_VALIDITY_DAYS))
         .add_extension(
             x509.SubjectAlternativeName(san_list),
             critical=False,
@@ -214,7 +206,7 @@ def check_gateway_health() -> bool:
     try:
         import requests
 
-        response = requests.get(f"{GATEWAY_URL}/health", timeout=5, verify=False)
+        response = requests.get(f"{GATEWAY_URL}/health", timeout=HEALTH_CHECK_TIMEOUT, verify=False)
         return response.status_code == 200
     except Exception:
         return False
@@ -315,6 +307,26 @@ def stop_containers(dind: bool = False):
     )
 
 
+def reset_containers(dind: bool = False):
+    """完全にクリーンアップ（イメージも削除）"""
+    print("Resetting environment (removing containers, volumes, and images)...")
+
+    # Lambdaコンテナなどはstop_containersで消えるが、念のためstop_containersも呼ぶか、
+    # あるいはdown --rmi allですべて消えるのを期待するか。
+    # ここでは安全のため stop_containers のロジック（Lambda削除）は流用せず、
+    # Composeの強力な cleanup に任せるが、LambdaコンテナがCompose管理外の場合は残る可能性がある。
+    # しかし --remove-orphans があるのでネットワーク上のものは消えるはず。
+    # 念のため既存の stop_containers を呼んでから reset するのが安全だが、
+    # ユーザーの要望は `down --volumes --rmi all --remove-orphans` なのでそれを素直に実装する。
+
+    compose_file = "docker-compose.dind.yml" if dind else "docker-compose.yml"
+    run_command(
+        get_compose_command()
+        + ["-f", compose_file, "down", "--volumes", "--rmi", "all", "--remove-orphans"],
+        check=False,
+    )
+
+
 def run_tests() -> int:
     """pytestでE2Eテストを実行"""
     print("[4/4] Running E2E tests...")
@@ -347,17 +359,47 @@ def main():
     parser.add_argument("--build", action="store_true", help="Rebuild images before running tests")
     parser.add_argument("--cleanup", action="store_true", help="Stop containers after tests")
     parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Remove all containers, volumes, and images before running",
+    )
+    parser.add_argument(
         "--dind", action="store_true", help="Use DinD mode (docker-compose.dind.yml)"
+    )
+    parser.add_argument(
+        "--env-file",
+        type=Path,
+        default=PROJECT_ROOT / ".env.test",
+        help="Path to .env file (default: .env.test)",
     )
 
     args = parser.parse_args()
 
+    # 環境変数をロード
+    load_environment(args.env_file)
+
+    # グローバル変数を更新
+    global GATEWAY_PORT, GATEWAY_URL, SCYLLADB_PORT, SCYLLADB_API_URL, VICTORIALOGS_PORT
+    GATEWAY_PORT = os.environ.get("GATEWAY_PORT", "443")
+    GATEWAY_URL = f"https://localhost:{GATEWAY_PORT}"
+    SCYLLADB_PORT = os.environ.get("SCYLLADB_PORT", "8001")
+    SCYLLADB_API_URL = f"http://localhost:{SCYLLADB_PORT}"
+    VICTORIALOGS_PORT = os.environ.get("VICTORIALOGS_PORT", "9428")
+
     print("=== Sample DinD Lambda E2E Test Runner ===")
     print(f"Project Root: {PROJECT_ROOT}")
-    print(f"Options: build={args.build}, cleanup={args.cleanup}, dind={args.dind}")
+    print(
+        f"Options: build={args.build}, cleanup={args.cleanup}, reset={args.reset}, dind={args.dind}"
+    )
     print()
 
     try:
+        # リセット要求があれば実行
+        if args.reset:
+            reset_containers(dind=args.dind)
+            # イメージを削除したため、再ビルドを強制
+            args.build = True
+
         # SSL証明書生成
         print("[1/4] Checking SSL certificates...")
         import ipaddress  # noqa: F401 - used in generate_ssl_certificate
