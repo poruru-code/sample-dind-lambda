@@ -14,16 +14,23 @@ docker compose でGatewayコンテナ（DinD環境）を起動し、
 """
 
 import os
+from pathlib import Path
 import time
 import json
 
 import pytest
 import requests
+from dotenv import load_dotenv
+
+# .env.test をロード (run_tests.py を経由しない場合でもテスト可能にする)
+env_file = Path(__file__).parent / ".env.test"
+if env_file.exists():
+    load_dotenv(env_file, override=False)
 
 # import urllib3  <-- Removed
-from services.common.core.http_client import HttpClientFactory
+from services.common.core.http_client import HttpClientFactory  # noqa: E402
 
-from services.gateway.config import config
+from services.gateway.config import config  # noqa: E402
 
 # Global SSL configuration
 factory = HttpClientFactory(config)
@@ -38,13 +45,9 @@ VICTORIALOGS_PORT = os.getenv("VICTORIALOGS_PORT", "9428")
 VICTORIALOGS_URL = os.getenv("VICTORIALOGS_URL", f"http://localhost:{VICTORIALOGS_PORT}")
 API_KEY = config.X_API_KEY
 
-# 認証情報は環境変数から直接取得 (config経由ではなく、テスト実行環境に依存させる)
-# run_tests.py または .env.test で設定されている前提
-AUTH_USER = os.environ["AUTH_USER"]
-AUTH_PASS = os.environ["AUTH_PASS"]
-# run_tests.py または .env.test で設定されている前提
-AUTH_USER = os.environ["AUTH_USER"]
-AUTH_PASS = os.environ["AUTH_PASS"]
+# 認証情報は環境変数から取得 (.env.test でロード済み)
+AUTH_USER = os.environ.get("AUTH_USER", "")
+AUTH_PASS = os.environ.get("AUTH_PASS", "")
 
 # Timeouts & Retries
 DEFAULT_REQUEST_TIMEOUT = 5
