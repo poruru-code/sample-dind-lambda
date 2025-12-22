@@ -139,7 +139,7 @@ services:
       - AUTH_PASS=${AUTH_PASS?AUTH_PASS is required}
       - CONTAINERS_NETWORK=${LAMBDA_NETWORK?LAMBDA_NETWORK is required}
       - GATEWAY_INTERNAL_URL=https://onpre-gateway
-      - MANAGER_URL=http://onpre-manager:${MANAGER_PORT:-8081}
+      - MANAGER_URL=http://onpre-manager:8081
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     logging:
       driver: fluentd

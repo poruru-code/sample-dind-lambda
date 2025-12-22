@@ -1,5 +1,8 @@
 FROM public.ecr.aws/lambda/python:3.12
 
+# 透過的ロギング用パッチ
+COPY lambda_functions/LayerLib/lambda_lib/python/sitecustomize.py /var/lang/lib/python3.12/site-packages/
+
 # Lambda関数のコードをコピー
 COPY lambda_functions/hello/lambda_function.py ${LAMBDA_TASK_ROOT}/
 

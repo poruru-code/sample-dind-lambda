@@ -2,7 +2,7 @@ import json
 import logging
 import uuid
 import time
-import dynamodb_util
+import boto3
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -18,15 +18,22 @@ def lambda_handler(event, context):
     logger.info(f"Received event: {json.dumps(event)}")
 
     try:
+        # 透過的パッチに依存してクライアントを作成
+        dynamodb = boto3.client("dynamodb")
+
         # Create table if not exists
-        dynamodb_util.create_table(
-            table_name=TABLE_NAME,
-            key_schema=[{"AttributeName": "id", "KeyType": "HASH"}],
-            attribute_definitions=[{"AttributeName": "id", "AttributeType": "S"}],
-        )
+        try:
+            dynamodb.create_table(
+                TableName=TABLE_NAME,
+                KeySchema=[{"AttributeName": "id", "KeyType": "HASH"}],
+                AttributeDefinitions=[{"AttributeName": "id", "AttributeType": "S"}],
+                BillingMode="PAY_PER_REQUEST",
+            )
+        except dynamodb.exceptions.ResourceInUseException:
+            # Table already exists
+            pass
 
         # Give it a moment if it was just created (though Alternator is usually instant)
-        # In a real app we might wait_for_table_exists, but for this test we proceed.
 
         # Create item
         item_id = str(uuid.uuid4())
@@ -38,11 +45,12 @@ def lambda_handler(event, context):
         }
 
         logger.info(f"Putting item: {item}")
-        dynamodb_util.put_item(TABLE_NAME, item)
+        dynamodb.put_item(TableName=TABLE_NAME, Item=item)
 
         # Get item
         logger.info(f"Getting item: {item_id}")
-        retrieved = dynamodb_util.get_item(TABLE_NAME, {"id": {"S": item_id}})
+        response = dynamodb.get_item(TableName=TABLE_NAME, Key={"id": {"S": item_id}})
+        retrieved = response.get("Item", {})
 
         return {
             "statusCode": 200,

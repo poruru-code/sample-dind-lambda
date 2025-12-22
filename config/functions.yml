@@ -7,6 +7,11 @@ defaults:
     LAMBDA_ENDPOINT: "https://onpre-gateway:443"
     LOG_LEVEL: "${LOG_LEVEL}"
 
+    # Standard Credentials for Boto3 (Local)
+    AWS_ACCESS_KEY_ID: "rustfsadmin"
+    AWS_SECRET_ACCESS_KEY: "rustfsadmin"
+    AWS_DEFAULT_REGION: "ap-northeast-1"
+
 functions:
   lambda-s3-test:
     environment:

@@ -1,14 +1,11 @@
 """
 S3テスト用Lambda関数
-
-Lambda Layerのs3_util.pyを使用してRustFS (S3互換) にアクセスします。
+標準のboto3を使用してS3互換ストレージ (RustFS) にアクセスします。
 """
 
 import json
+import boto3
 from datetime import datetime, timezone
-
-# Lambda Layerからインポート
-from s3_util import init_storage, get_object, put_object, list_objects
 
 
 def lambda_handler(event, context):
@@ -21,14 +18,11 @@ def lambda_handler(event, context):
 
     Args:
         event: API Gatewayからのイベント
-            - action: "put" | "get" | "list" | "test"
+            - action: "put" | "get" | "list" | "test" | "create_bucket"
             - bucket: バケット名
             - key: オブジェクトキー
             - data: アップロードするデータ (put時)
         context: Lambda実行コンテキスト
-
-    Returns:
-        API Gateway互換のレスポンス
     """
     # requestContextからユーザー名を取得
     request_context = event.get("requestContext", {})
@@ -75,7 +69,8 @@ def lambda_handler(event, context):
     data = body.get("data", "Hello from Lambda!")
 
     try:
-        s3_client = init_storage()
+        # 透過的パッチ(sitecustomize.py)に依存してクライアントを作成
+        s3_client = boto3.client("s3")
 
         if action == "test":
             # 接続テスト: バケット一覧を取得
@@ -89,36 +84,43 @@ def lambda_handler(event, context):
 
         elif action == "put":
             # オブジェクトをアップロード
-            result_data = put_object(bucket, key, data.encode("utf-8"))
+            # put_object wraps client.put_object
+            response = s3_client.put_object(
+                Bucket=bucket,
+                Key=key,
+                Body=data.encode("utf-8"),
+                ContentType="application/octet-stream",
+            )
             result = {
                 "action": "put",
                 "success": True,
                 "bucket": bucket,
                 "key": key,
-                "etag": result_data.get("ETag"),
+                "etag": response.get("ETag"),
                 "user": username,
             }
 
         elif action == "get":
             # オブジェクトを取得
-            content = get_object(bucket, key)
+            response = s3_client.get_object(Bucket=bucket, Key=key)
+            content = response["Body"].read().decode("utf-8")
             result = {
                 "action": "get",
                 "success": True,
                 "bucket": bucket,
                 "key": key,
-                "content": content.decode("utf-8"),
+                "content": content,
                 "user": username,
             }
 
         elif action == "list":
             # オブジェクト一覧を取得
-            objects = list_objects(bucket, body.get("prefix", ""))
+            response = s3_client.list_objects_v2(Bucket=bucket, Prefix=body.get("prefix", ""))
             result = {
                 "action": "list",
                 "success": True,
                 "bucket": bucket,
-                "objects": [obj["Key"] for obj in objects],
+                "objects": [obj["Key"] for obj in response.get("Contents", [])],
                 "user": username,
             }
 

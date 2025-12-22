@@ -601,6 +601,92 @@ class TestE2E:
         # VictoriaLogsクエリは複雑なので、ここではレスポンス成功のみで十分とする
         print("Test passed: Container was successfully adopted after Manager restart")
 
+    def test_cloudwatch_logs_via_boto3(self, gateway_health):
+        """
+        E2E: CloudWatch Logs API 透過的リダイレクト検証
+
+        シナリオ:
+        1. Lambda関数 (hello) で boto3.client('logs').put_log_events() を呼び出す
+        2. sitecustomize.py が boto3.client('logs') をインターセプトし stdout へ直接 JSON 出力
+        3. Fluent Bit が収集し VictoriaLogs へ転送
+        4. VictoriaLogs で logger:boto3.mock のログがクエリ可能なことを確認
+        """
+        # 1. Lambda 呼び出し (action=test_cloudwatch)
+        invoke_url = f"{GATEWAY_URL}/2015-03-31/functions/lambda-hello/invocations"
+        payload = {"body": '{"action": "test_cloudwatch"}'}
+
+        response = requests.post(invoke_url, json=payload, verify=VERIFY_SSL, timeout=30)
+        assert response.status_code == 200, f"Lambda invocation failed: {response.text}"
+
+        resp_data = response.json()
+        resp_body = json.loads(resp_data.get("body", "{}"))
+        assert resp_body.get("success") is True, f"CloudWatch test failed: {resp_body.get('error')}"
+
+        log_group = resp_body.get("log_group")
+        log_stream = resp_body.get("log_stream")
+        print(f"CloudWatch test: log_group={log_group}, log_stream={log_stream}")
+
+        # 2. ログが VictoriaLogs に伝搬するまで待機 (Forwarder の flush interval が 2s なので少し長めに待つ)
+        time.sleep(5)
+
+        # 3. VictoriaLogs でログを検索 (log_stream でフィルタして今回のテスト分のみ取得)
+        vlogs_url = f"http://localhost:{VICTORIALOGS_PORT}/select/logsql/query"
+        query = f'logger:boto3.mock AND log_group:"{log_group}" AND log_stream:"{log_stream}"'
+
+        max_retries = 10
+        found_logs = False
+        log_entries = []
+        for i in range(max_retries):
+            r = requests.get(vlogs_url, params={"query": query, "limit": 20}, timeout=10)
+            if r.status_code == 200 and r.text.strip():
+                lines = r.text.strip().split("\n")
+                if lines and lines[0]:
+                    log_entries = [json.loads(line) for line in lines if line.strip()]
+                    # 4つ全てのログが届くまでリトライする（任意だが、全件検証したいので）
+                    if len(log_entries) >= 4:
+                        found_logs = True
+                        print(f"Found {len(log_entries)} log entries in VictoriaLogs")
+                        break
+                    else:
+                        print(
+                            f"Found only {len(log_entries)}/4 logs, retrying... ({i + 1}/{max_retries})"
+                        )
+            time.sleep(2)
+
+        assert found_logs, (
+            f"CloudWatch Logs not found in VictoriaLogs for log_group={log_group}. "
+            "Check Gateway /aws/logs endpoint and Fluent Bit configuration."
+        )
+
+        # （/onpre-gateway ではなく lambda-hello）
+        for entry in log_entries:
+            container_name = entry.get("container_name", "")
+            assert container_name == "lambda-hello", (
+                f"Expected container_name='lambda-hello', got '{container_name}'. "
+                "CloudWatch Logs should be attributed to Lambda container, not Gateway."
+            )
+
+        # 5. ログレベルが正しく設定されていることを検証
+        levels = [entry.get("level", "") for entry in log_entries]
+        print(f"Detected levels in VictoriaLogs: {levels}")
+
+        assert "DEBUG" in levels, "DEBUG level log not found in VictoriaLogs"
+        assert "ERROR" in levels, "ERROR level log not found in VictoriaLogs"
+        assert "INFO" in levels, "INFO level log not found in VictoriaLogs"
+
+        # 6. メッセージの内容が Lambda から送信されたものか検証
+        # VictoriaLogs は _msg_field=message 設定により message を _msg として保存
+        messages = [entry.get("_msg", "") for entry in log_entries]
+        expected_message = "CloudWatch Logs E2E verification successful!"
+        found_expected_message = any(expected_message in msg for msg in messages)
+        assert found_expected_message, (
+            f"Expected message '{expected_message}' not found in logs. Got messages: {messages}"
+        )
+
+        print(
+            f"CloudWatch Logs E2E test passed! Found {len(log_entries)} logs with correct container_name, levels (DEBUG/INFO/ERROR), and message content"
+        )
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
