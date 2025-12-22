@@ -45,17 +45,14 @@ def mock_registry():
 def test_gateway_handler_propagates_request_id(mock_proxy, mock_ensure_container):
     # Override dependencies
     from services.gateway.api.deps import verify_authorization, resolve_lambda_target
+    from services.gateway.models import TargetFunction
 
     app.dependency_overrides[verify_authorization] = lambda: "test-user"
-    app.dependency_overrides[resolve_lambda_target] = lambda: type(
-        "obj",
-        (object,),
-        {
-            "container_name": "test-container",
-            "function_config": {"image": "img", "environment": {}},
-            "path_params": {},
-            "route_path": "/api/s3/test",
-        },
+    app.dependency_overrides[resolve_lambda_target] = lambda: TargetFunction(
+        container_name="test-container",
+        function_config={"image": "img", "environment": {}},
+        path_params={},
+        route_path="/api/s3/test",
     )
 
     trace_id = "integration-trace-id-999"
