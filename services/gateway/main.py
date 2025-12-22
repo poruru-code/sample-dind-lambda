@@ -25,7 +25,14 @@ from .services.function_registry import FunctionRegistry
 from .services.route_matcher import RouteMatcher
 from .services.lambda_invoker import LambdaInvoker
 
-from .api.deps import UserIdDep, LambdaTargetDep
+from .api.deps import (
+    UserIdDep,
+    LambdaTargetDep,
+    LambdaInvokerDep,
+    FunctionRegistryDep,
+    ManagerClientDep,
+    HttpClientDep,
+)
 from .core.logging_config import setup_logging
 from services.common.core.request_context import set_request_id, clear_request_id
 from services.common.core.http_client import HttpClientFactory
@@ -187,6 +194,8 @@ async def invoke_lambda_api(
     function_name: str,
     request: Request,
     background_tasks: BackgroundTasks,
+    invoker: LambdaInvokerDep,
+    registry: FunctionRegistryDep,
 ):
     """
     AWS Lambda Invoke API 互換エンドポイント
@@ -196,9 +205,7 @@ async def invoke_lambda_api(
       - RequestResponse（デフォルト）: 同期呼び出し、結果を返す
       - Event: 非同期呼び出し、即座に202を返す
     """
-    # Retrieve dependencies
-    invoker: LambdaInvoker = request.app.state.lambda_invoker
-    registry: FunctionRegistry = request.app.state.function_registry
+    # Retrieve dependencies (Now injected via DI)
 
     # 関数存在チェック（404判定用）
     if registry.get_function_config(function_name) is None:
@@ -237,6 +244,8 @@ async def gateway_handler(
     path: str,
     user_id: UserIdDep,
     target: LambdaTargetDep,
+    manager_client: ManagerClientDep,
+    http_client: HttpClientDep,
 ):
     """
     キャッチオールルート：routing.ymlに基づいてLambda RIEに転送
@@ -245,7 +254,7 @@ async def gateway_handler(
     """
     # オンデマンドコンテナ起動
     try:
-        container_host = await request.app.state.manager_client.ensure_container(
+        container_host = await manager_client.ensure_container(
             function_name=target.container_name,
             image=target.function_config.get("image"),
             env=target.function_config.get("environment", {}),
@@ -263,9 +272,7 @@ async def gateway_handler(
         event = build_event(request, body, user_id, target.path_params, target.route_path)
 
         # Inject shared client
-        lambda_response = await proxy_to_lambda(
-            container_host, event, client=request.app.state.http_client
-        )
+        lambda_response = await proxy_to_lambda(container_host, event, client=http_client)
 
         # レスポンス変換
         result = parse_lambda_response(lambda_response)
@@ -288,13 +295,13 @@ async def gateway_handler(
                 "container_name": target.container_name,
                 "container_host": container_host,
                 "port": config.LAMBDA_PORT,
-                "timeout": request.app.state.http_client.timeout.read,
+                "timeout": http_client.timeout.read,
                 "error_type": type(e).__name__,
                 "error_detail": str(e),
             },
             exc_info=True,
         )
-        request.app.state.manager_client.invalidate_cache(target.container_name)
+        manager_client.invalidate_cache(target.container_name)
         return JSONResponse(status_code=502, content={"message": "Bad Gateway"})
 
 
