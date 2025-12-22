@@ -12,7 +12,39 @@
 
 ## アーキテクチャ
 
-（...中略: アーキテクチャ図と説明は変更なし...）
+```mermaid
+graph TD
+    User([Developer / Client]) -->|HTTPS| Gateway[API Gateway - FastAPI]
+    
+    subgraph "Core Services"
+        Gateway -->|Invoke API| Manager[Container Manager]
+        Gateway -->|Proxy Request| LambdaRIE[Lambda RIE Container]
+        
+        Manager -->|Docker API| LambdaRIE
+        Manager -->|Provision| ScyllaDB[(ScyllaDB - DynamoDB)]
+        Manager -->|Provision| RustFS[(RustFS - S3)]
+        
+        LambdaRIE -->|AWS SDK| ScyllaDB
+        LambdaRIE -->|AWS SDK| RustFS
+        LambdaRIE -->|HTTP/JSON Logs| VictoriaLogs[(VictoriaLogs)]
+    end
+    
+    subgraph "CLI Toolchain (esb)"
+        esb[esb CLI] -->|build| Generator[SAM Generator]
+        esb -->|up| DockerCompose[Docker Compose]
+        esb -->|up| Provisioner[Provisioner]
+        esb -->|watch| Watcher[File Watcher]
+    end
+    
+    Generator -->|Automate| Routing[routing.yml]
+    Generator -->|Automate| Dockerfiles[Dockerfiles]
+    Watcher -->|Trigger| esb
+```
+
+### システムコンポーネント
+- **`Gateway`**: API Gateway 互換プロキシ。`routing.yml` に基づき認証・ルーティングを行い、Manager を介して Lambda コンテナをオンデマンドで呼び出します。
+- **`Manager`**: コンテナのライフサイクル管理を担当。DinD 技術を用いて Lambda RIE コンテナを管理し、リソース（DB/S3）のプロビジョニングも実行します。
+- **`esb CLI`**: SAM テンプレート (`template.yaml`) を **Single Source of Truth** とし、開発を自動化する統合コマンドラインツールです。
 
 ### ファイル構成
 ```text
