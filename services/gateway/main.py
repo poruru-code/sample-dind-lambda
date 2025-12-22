@@ -14,9 +14,10 @@ from typing import Optional
 from datetime import datetime, timezone
 import httpx
 import logging
+import json
 from .config import config
 from .core.security import create_access_token
-from .core.proxy import proxy_to_lambda, parse_lambda_response
+from .core.utils import parse_lambda_response
 from .models import AuthRequest, AuthResponse, AuthenticationResult
 from .client import ManagerClient
 from .services.container_manager import HttpContainerManager
@@ -33,7 +34,6 @@ from .api.deps import (
     LambdaInvokerDep,
     FunctionRegistryDep,
     ManagerClientDep,
-    HttpClientDep,
     EventBuilderDep,
 )
 from .core.logging_config import setup_logging
@@ -157,6 +157,14 @@ app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 
 
+@app.exception_handler(FunctionNotFoundError)
+async def function_not_found_handler(request: Request, exc: FunctionNotFoundError):
+    return JSONResponse(
+        status_code=404,
+        content={"message": str(exc)},
+    )
+
+
 # ===========================================
 # エンドポイント定義
 # ===========================================
@@ -258,35 +266,15 @@ async def gateway_handler(
     user_id: UserIdDep,
     target: LambdaTargetDep,
     manager_client: ManagerClientDep,
-    http_client: HttpClientDep,
     event_builder: EventBuilderDep,
+    invoker: LambdaInvokerDep,
 ):
     """
     キャッチオールルート：routing.ymlに基づいてLambda RIEに転送
 
     認証とルーティング解決は DI で自動的に行われる。
     """
-    # オンデマンドコンテナ起動
-    try:
-        container_host = await manager_client.ensure_container(
-            function_name=target.container_name,
-            image=target.function_config.get("image"),
-            env=target.function_config.get("environment", {}),
-        )
-    except FunctionNotFoundError:
-        logger.warning(f"Function definition not found on manager for {target.container_name}")
-        return JSONResponse(
-            status_code=404,
-            content={"message": "Function not found on manager"},
-        )
-    except Exception as e:
-        logger.error(f"Failed to ensure container {target.container_name}: {e}", exc_info=True)
-        return JSONResponse(
-            status_code=503,
-            content={"message": "Service Unavailable", "detail": "Cold start failed"},
-        )
-
-    # Lambda RIEに転送
+    # Build Event and Invoke Lambda
     try:
         body = await request.body()
         event = await event_builder.build(
@@ -297,8 +285,9 @@ async def gateway_handler(
             route_path=target.route_path,
         )
 
-        # Inject shared client
-        lambda_response = await proxy_to_lambda(container_host, event, client=http_client)
+        # Invoke Lambda via LambdaInvoker (handles container ensure & RIE req)
+        payload = json.dumps(event).encode("utf-8")
+        lambda_response = await invoker.invoke_function(target.container_name, payload)
 
         # レスポンス変換
         result = parse_lambda_response(lambda_response)
@@ -319,16 +308,20 @@ async def gateway_handler(
             f"Lambda connection failed for {target.container_name}",
             extra={
                 "container_name": target.container_name,
-                "container_host": container_host,
                 "port": config.LAMBDA_PORT,
-                "timeout": http_client.timeout.read,
+                "timeout": config.LAMBDA_INVOKE_TIMEOUT,
                 "error_type": type(e).__name__,
                 "error_detail": str(e),
             },
             exc_info=True,
         )
+        # LambdaInvoker might have already logged, but we keep this for gateway context
         manager_client.invalidate_cache(target.container_name)
         return JSONResponse(status_code=502, content={"message": "Bad Gateway"})
+    except ContainerStartError as e:
+        return JSONResponse(status_code=503, content={"message": str(e)})
+    except LambdaExecutionError as e:
+        return JSONResponse(status_code=502, content={"message": str(e)})
 
 
 if __name__ == "__main__":

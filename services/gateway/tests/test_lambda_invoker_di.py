@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock, AsyncMock, patch
 from services.gateway.services.lambda_invoker import LambdaInvoker
 from services.gateway.services.function_registry import FunctionRegistry
 from services.gateway.config import GatewayConfig
@@ -72,3 +72,31 @@ async def test_lambda_invoker_invoke_flow():
     expected_url = f"http://10.0.0.5:{config.LAMBDA_PORT}/2015-03-31/functions/function/invocations"
     client.post.assert_called_once()
     assert client.post.call_args[0][0] == expected_url
+
+
+@pytest.mark.asyncio
+async def test_lambda_invoker_logging_on_error():
+    """Test LambdaInvoker logs errors with extra context"""
+    from services.gateway.core.exceptions import LambdaExecutionError
+    import httpx
+
+    client = AsyncMock()
+    registry = MagicMock(spec=FunctionRegistry)
+    container_manager = AsyncMock()
+    config = GatewayConfig()
+
+    invoker = LambdaInvoker(client, registry, container_manager, config)
+
+    # Setup mocks
+    registry.get_function_config.return_value = {"image": "img", "environment": {}}
+    container_manager.get_lambda_host.return_value = "host"
+    client.post.side_effect = httpx.RequestError("Connection failed")
+
+    with patch("services.gateway.services.lambda_invoker.logger") as mock_logger:
+        with pytest.raises(LambdaExecutionError):
+            await invoker.invoke_function("error-func", b"{}")
+
+        mock_logger.error.assert_called_once()
+        call_args = mock_logger.error.call_args
+        assert "function_name" in call_args.kwargs["extra"]
+        assert call_args.kwargs["extra"]["function_name"] == "error-func"

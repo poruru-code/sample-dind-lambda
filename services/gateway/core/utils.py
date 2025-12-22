@@ -1,8 +1,5 @@
 """
-プロキシロジックモジュール
-
-API Gateway Lambda Proxy Integration互換のイベント構築と
-プロキシ機能: Lambda RIEへのリクエスト転送とレスポンス変換
+Gateway Utility Module
 """
 
 import json
@@ -11,51 +8,7 @@ from typing import Dict, Any
 
 import httpx
 
-from ..config import config
-
-logger = logging.getLogger("gateway.proxy")
-
-
-def resolve_container_ip(container_name: str) -> str:
-    """
-    コンテナ名からIPアドレスを解決
-
-    Gatewayが内部ネットワーク(LAMBDA_NETWORK)に参加しているため、
-    DockerのDNS機能によりコンテナ名で直接アクセス可能。
-    そのため、基本的にはコンテナ名をそのまま返す。
-
-    Args:
-        container_name: Dockerコンテナ名
-
-    Returns:
-        アクセス可能なホスト名またはIPアドレス
-    """
-    # 既にIPアドレス形式の場合はそのまま返す
-    if container_name.replace(".", "").isdigit():
-        return container_name
-
-    # 同一ネットワーク内なのでコンテナ名で名前解決可能
-    return container_name
-
-
-async def proxy_to_lambda(
-    target_container: str, event: dict, client: httpx.AsyncClient
-) -> httpx.Response:
-    """
-    Lambda RIEコンテナにリクエストを転送
-    """
-    # コンテナ名からIPを解決
-    host = resolve_container_ip(target_container)
-
-    rie_url = f"http://{host}:{config.LAMBDA_PORT}/2015-03-31/functions/function/invocations"
-
-    headers = {"Content-Type": "application/json"}
-
-    response = await client.post(
-        rie_url, json=event, headers=headers, timeout=config.LAMBDA_INVOKE_TIMEOUT
-    )
-
-    return response
+logger = logging.getLogger("gateway.utils")
 
 
 def parse_lambda_response(lambda_response: httpx.Response) -> Dict[str, Any]:

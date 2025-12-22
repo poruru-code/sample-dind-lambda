@@ -241,11 +241,20 @@ MyTable:
 
 ### テスト実行
 
+#### E2E (End-to-End) Tests
 E2Eテストは、`esb up` で構築された環境（Manager が Docker Socket を介して Lambda を動的に管理）に対して実行されます。
 
 ```bash
 # 環境を起動した状態で実行
 python tests/run_tests.py
+```
+
+#### Unit Tests
+各サービスの単体テストを実行します（環境起動は不要です）。
+
+```bash
+# ユニットテストのみ実行
+python tests/run_tests.py --unit-only
 ```
 
 ## トラブルシューティング

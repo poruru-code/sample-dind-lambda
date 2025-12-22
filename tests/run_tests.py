@@ -34,8 +34,23 @@ def main():
     parser.add_argument(
         "--dind", action="store_true", help="Use DinD mode (docker-compose.dind.yml)"
     )
+    parser.add_argument("--unit", action="store_true", help="Run unit tests")
+    parser.add_argument("--unit-only", action="store_true", help="Run unit tests only")
 
     args = parser.parse_args()
+
+    # --- Unit Tests ---
+    if args.unit or args.unit_only:
+        print("\n=== Running Unit Tests ===\n")
+        cmd = [sys.executable, "-m", "pytest", "services/gateway/tests", "tools/cli/tests", "-v"]
+        res = subprocess.run(cmd, cwd=PROJECT_ROOT, check=False)
+        if res.returncode != 0:
+            print("\n❌ Unit Tests failed.")
+            sys.exit(res.returncode)
+        print("\n🎉 Unit Tests passed!")
+
+        if args.unit_only:
+            sys.exit(0)
 
     # --- 環境設定 ---
     # .env.test を最初にロード（ESB_TEMPLATE等の設定を取得）
