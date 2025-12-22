@@ -13,6 +13,8 @@ def run(args):
 
     logging.step("Stopping services...")
     cmd = ["docker", "compose", "down", "--remove-orphans"]
+    if getattr(args, "volumes", False):
+        cmd.append("--volumes")
 
     try:
         subprocess.check_call(cmd)

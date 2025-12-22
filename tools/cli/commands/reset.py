@@ -1,0 +1,41 @@
+from . import down, up
+from tools.cli.core import logging
+
+
+def run(args):
+    """
+    環境を完全に初期化する: docker compose down -v -> esb up --build
+    """
+    logging.warning("This command will PERMANENTLY DELETE all database tables and S3 buckets.")
+
+    try:
+        confirm = input(
+            f"{logging.Color.YELLOW}Are you sure you want to proceed? [y/N]: {logging.Color.END}"
+        )
+    except (EOFError, KeyboardInterrupt):
+        print()  # 改行
+        logging.info("Reset cancelled.")
+        return
+
+    if confirm.lower() not in ["y", "yes"]:
+        logging.info("Reset cancelled.")
+        return
+
+    logging.step("Resetting environment...")
+
+    # Argument pass-through 用の簡易クラス
+    class ResetArgs:
+        def __init__(self, **kwargs):
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+
+    logging.info("Deleting all containers and volumes...")
+    down_args = ResetArgs(volumes=True)
+    down.run(down_args)
+
+    # 2. 再起動 (強制ビルド)
+    logging.info("Rebuilding and starting services...")
+    up_args = ResetArgs(build=True, detach=True)
+    up.run(up_args)
+
+    logging.success("Environment has been successfully reset.")

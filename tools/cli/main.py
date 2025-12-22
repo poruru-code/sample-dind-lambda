@@ -8,7 +8,7 @@ project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-from tools.cli.commands import build, up, watch, down  # noqa: E402
+from tools.cli.commands import build, up, watch, down, reset  # noqa: E402
 
 
 def main():
@@ -34,7 +34,16 @@ def main():
     subparsers.add_parser("watch", help="Watch for changes and hot-reload")
 
     # --- down command ---
-    subparsers.add_parser("down", help="Stop the environment")
+    down_parser = subparsers.add_parser("down", help="Stop the environment")
+    down_parser.add_argument(
+        "--volumes",
+        "-v",
+        action="store_true",
+        help="Remove named volumes declared in the volumes section",
+    )
+
+    # --- reset command ---
+    subparsers.add_parser("reset", help="Completely reset the environment (deletes data!)")
 
     args = parser.parse_args()
 
@@ -47,6 +56,8 @@ def main():
             watch.run(args)
         elif args.command == "down":
             down.run(args)
+        elif args.command == "reset":
+            reset.run(args)
     except KeyboardInterrupt:
         print("\nAborted.")
         sys.exit(0)
