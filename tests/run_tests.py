@@ -256,8 +256,30 @@ def wait_for_scylladb() -> bool:
     return False
 
 
+def build_lambda_images():
+    """すべてのLambda関数イメージをビルド"""
+    print("[1.5/4] Building Lambda function images...")
+
+    lambda_functions = [
+        ("lambda-hello", "lambda_functions/hello/Dockerfile"),
+        ("lambda-s3-test", "lambda_functions/s3-test/Dockerfile"),
+        ("lambda-scylla-test", "lambda_functions/scylla-test/Dockerfile"),
+        ("lambda-invoke-test", "lambda_functions/invoke-test/Dockerfile"),
+    ]
+
+    for name, dockerfile in lambda_functions:
+        print(f"  Building {name}...")
+        run_command(["docker", "build", "-t", f"{name}:latest", "-f", dockerfile, "."])
+
+    print("  Lambda images built successfully!")
+
+
 def start_containers(build: bool = False, dind: bool = False):
     """Docker Composeでコンテナを起動"""
+    # Lambda イメージを先にビルド（--build 指定時）
+    if build:
+        build_lambda_images()
+
     print("[2/4] Starting containers...")
 
     compose_file = "docker-compose.dind.yml" if dind else "docker-compose.yml"
