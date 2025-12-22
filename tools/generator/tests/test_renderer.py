@@ -22,7 +22,7 @@ class TestDockerfileRenderer:
         result = render_dockerfile(func_config, docker_config)
         
         assert 'FROM public.ecr.aws/lambda/python:3.12' in result
-        assert 'COPY tools/generator/lib/sitecustomize.py' in result
+        assert 'COPY tools/generator/runtime/sitecustomize.py' in result
         assert 'COPY functions/hello/' in result
         assert 'CMD [ "lambda_function.lambda_handler" ]' in result
 

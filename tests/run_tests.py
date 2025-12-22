@@ -64,7 +64,7 @@ def run_command(cmd: list[str], check: bool = True) -> subprocess.CompletedProce
 
 
 def get_compose_command() -> list[str]:
-    """使用可能な docker compose コマンドを判定"""
+    """使用可能な docker compose コマンドを判定し、プロジェクト名を指定"""
     # 1. 'docker compose' を試行
     try:
         result = subprocess.run(
@@ -73,7 +73,7 @@ def get_compose_command() -> list[str]:
             check=False,
         )
         if result.returncode == 0:
-            return ["docker", "compose"]
+            return ["docker", "compose", "--project-name", "edge-serverless-box"]
     except FileNotFoundError:
         pass
 
@@ -85,7 +85,7 @@ def get_compose_command() -> list[str]:
             check=False,
         )
         if result.returncode == 0:
-            return ["docker-compose"]
+            return ["docker-compose", "--project-name", "edge-serverless-box"]
     except FileNotFoundError:
         pass
 

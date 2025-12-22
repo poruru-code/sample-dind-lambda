@@ -1,12 +1,13 @@
-# Sample DinD Lambda Simulator
-Docker in Docker (DinD) 技術を活用した、オンプレミス環境向けのエッジサーバーレス・シミュレーターです。
+# Edge Serverless Box
 
-## 特徴
-- **Pure DinD**: 1つの親コンテナ内に Gateway, Storage, DB, Lambda 等の全サービスを集約。
-- **Serverless-like**: Lambda関数はオンデマンドで起動し、アイドル時に自動停止（デフォルト5分）。
-- **AWS API Gateway Compatibility**: `multiValueHeaders` や `multiValueQueryStringParameters` に対応した高度な互換性。
-- **Direct Access**: リバースプロキシを排し、各サービスへHTTPポートで直接アクセス可能。
-- **Hybrid Dev**: 開発用 (`docker-compose.yml`) と 本番用 (`docker-compose.dind.yml`) をシームレスに切り替え。
+**オンプレミス・エッジ環境のための、自己完結型サーバーレス実行基盤**
+*(A self-contained, serverless-compatible environment for edge and local development)*
+
+### 特徴
+- **True AWS Compatibility**: 実行エンジンに **AWS Lambda Runtime Interface Emulator (RIE)** を採用。クラウド上の Lambda と完全に一致する挙動をローカル環境で保証します。
+- **Production-Ready Architecture**: 外部公開用の `Gateway` と特権を持つ `Manager` を分離したマイクロサービス構成により、開発用モックにとどまらず、実運用にも耐えうるセキュリティと耐障害性を実現しています。
+- **Full Stack in a Box**: S3互換ストレージ (RustFS)、DynamoDB互換DB (ScyllaDB)、ログ基盤を同梱しており、`docker compose up` だけで完全なクラウドネイティブ環境が手に入ります。
+- **Efficient Orchestration**: DinD (Docker in Docker) 技術により、Lambda関数コンテナをオンデマンドで起動し、アイドル時に自動停止（デフォルト5分）することでリソースを最適化します。
 
 ## アーキテクチャ
 
@@ -76,10 +77,10 @@ graph TD
 │   ├── parser.py            # SAMテンプレートパーサー
 │   ├── renderer.py          # Dockerfile/functions.yml生成
 │   ├── main.py              # CLIエントリーポイント
-│   ├── runtime/             # Lambda ランタイムパッチ
+│   ├── lib/                 # Lambda ランタイムパッチ
 │   │   └── sitecustomize.py     # boto3モンキーパッチ (S3/DynamoDB/Lambda/Logs)
 │   └── tests/               # 単体テスト
-│       └── runtime/
+│       └── lib/
 │           └── test_sitecustomize.py
 ├── tests/
 │   ├── e2e/                 # E2Eテスト用Lambda関数
@@ -147,6 +148,33 @@ python tests/run_tests.py --build
 ```
 ※ `--build` オプションで再ビルド可能。
 
+### トラブルシューティング
+
+#### Docker リソースの競合エラー
+
+リポジトリ名を変更した場合や、以下のようなエラーが発生した場合は、古いDockerリソースをクリーンアップしてください:
+
+```
+WARN a network with name test-external exists but was not created for project "edge-serverless-box"
+Error: The container name "/onpre-database" is already in use
+```
+
+**解決方法:**
+```bash
+# 既存のコンテナとネットワークを削除
+docker compose -f docker-compose.yml -f tests/docker-compose.test.yml down --remove-orphans -v
+
+# 不要なネットワークとコンテナを一括削除
+docker network prune -f
+docker container prune -f
+
+# テストを再実行
+python tests/run_tests.py --reset
+```
+
+> **Note**: `--reset` オプションを使用すると、イメージも含めて完全にクリーンアップしてから再ビルドします。
+
+
 ### SAM Template Generator
 SAMテンプレートからDockerfileと構成ファイルを自動生成するツールです。
 本プロジェクトでは、Lambda関数の構成管理を `template.yaml` に一本化しています。
@@ -180,7 +208,7 @@ python -m tools.generator.main --config tests/e2e/generator.yml
    ```bash
    python -m tools.generator.main --config tests/e2e/generator.yml
    ```
-   これり、以下が自動生成されます:
+   これにより、以下が自動生成されます:
    - `tests/e2e/functions/my-func/Dockerfile`
    - `tests/e2e/config/functions.yml` (Gateway設定)
 

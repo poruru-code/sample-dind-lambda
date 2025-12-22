@@ -1,7 +1,7 @@
 [project]
-name = "sample-dind-lambda"
+name = "edge-serverless-box"
 version = "0.1.0"
-description = "Edge Serverless Simulator with Docker in Docker"
+description = "High-fidelity Lambda runtime for edge and local development, powered by AWS Lambda RIE."
 requires-python = ">=3.12"
 dependencies = [
     # API Gateway互換サーバー

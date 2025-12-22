@@ -65,7 +65,7 @@ Resources:
             assert dockerfile.exists(), "Dockerfile should be generated"
             
             content = dockerfile.read_text()
-            assert 'COPY tools/generator/lib/sitecustomize.py' in content
+            assert 'COPY tools/generator/runtime/sitecustomize.py' in content
             
             functions_yml = tmpdir / 'functions.yml'
             assert functions_yml.exists(), "functions.yml should be generated"
