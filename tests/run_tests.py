@@ -256,19 +256,56 @@ def wait_for_scylladb() -> bool:
     return False
 
 
-def build_lambda_images():
-    """すべてのLambda関数イメージをビルド"""
-    print("[1.5/4] Building Lambda function images...")
-
-    lambda_functions = [
-        ("lambda-hello", "lambda_functions/hello/Dockerfile"),
-        ("lambda-s3-test", "lambda_functions/s3-test/Dockerfile"),
-        ("lambda-scylla-test", "lambda_functions/scylla-test/Dockerfile"),
-        ("lambda-invoke-test", "lambda_functions/invoke-test/Dockerfile"),
+def generate_lambda_files():
+    """SAMテンプレートからDockerfile/configを生成"""
+    print("[1.3/4] Generating Lambda files from SAM template...")
+    
+    cmd = [
+        sys.executable, "-m", "tools.generator.main",
+        "--config", "tests/e2e/generator.yml"
     ]
+    
+    try:
+        subprocess.run(
+            cmd,
+            cwd=PROJECT_ROOT,
+            check=True
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"Error generating Lambda files: {e}")
+        sys.exit(1)
 
+
+
+def build_lambda_images():
+    """すべてのLambda関数イメージをビルド
+    
+    tests/e2e/functions/ ディレクトリをスキャンし、
+    Dockerfile が存在するサブディレクトリをビルド対象とする。
+    イメージ名は 'lambda-{ディレクトリ名}' とする。
+    """
+    print("[1.5/4] Building Lambda function images...")
+    
+    functions_dir = PROJECT_ROOT / "tests" / "e2e" / "functions"
+    if not functions_dir.exists():
+        print("  Warning: tests/e2e/functions/ not found, skipping Lambda build")
+        return
+    
+    lambda_functions = []
+    for subdir in sorted(functions_dir.iterdir()):
+        if subdir.is_dir():
+            dockerfile = subdir / "Dockerfile"
+            if dockerfile.exists():
+                name = f"lambda-{subdir.name}"
+                lambda_functions.append((name, str(dockerfile.relative_to(PROJECT_ROOT))))
+    
+    if not lambda_functions:
+        print("  Warning: No Dockerfiles found in tests/e2e/functions/")
+        return
+    
     for name, dockerfile in lambda_functions:
         print(f"  Building {name}...")
+        print(f"  > docker build -t {name}:latest -f {dockerfile} .")
         run_command(["docker", "build", "-t", f"{name}:latest", "-f", dockerfile, "."])
 
     print("  Lambda images built successfully!")
@@ -282,8 +319,16 @@ def start_containers(build: bool = False, dind: bool = False):
 
     print("[2/4] Starting containers...")
 
-    compose_file = "docker-compose.dind.yml" if dind else "docker-compose.yml"
-    cmd = get_compose_command() + ["-f", compose_file, "up", "-d"]
+    if dind:
+        compose_files = ["docker-compose.dind.yml"]
+    else:
+        # 非DinDモード: docker-compose.test.yml で tests/e2e/config をマウント
+        compose_files = ["docker-compose.yml", "tests/docker-compose.test.yml"]
+    
+    cmd = get_compose_command()
+    for f in compose_files:
+        cmd.extend(["-f", f])
+    cmd.extend(["up", "-d"])
 
     if build:
         cmd.append("--build")
@@ -322,11 +367,16 @@ def stop_containers(dind: bool = False):
         pass
 
     # Docker Compose で管理されているコンテナを停止
-    compose_file = "docker-compose.dind.yml" if dind else "docker-compose.yml"
-    run_command(
-        get_compose_command() + ["-f", compose_file, "down", "--remove-orphans", "-v"],
-        check=False,
-    )
+    if dind:
+        compose_files = ["docker-compose.dind.yml"]
+    else:
+        compose_files = ["docker-compose.yml", "tests/docker-compose.test.yml"]
+    
+    cmd = get_compose_command()
+    for f in compose_files:
+        cmd.extend(["-f", f])
+    cmd.extend(["down", "--remove-orphans", "-v"])
+    run_command(cmd, check=False)
 
 
 def reset_containers(dind: bool = False):
@@ -341,12 +391,16 @@ def reset_containers(dind: bool = False):
     # 念のため既存の stop_containers を呼んでから reset するのが安全だが、
     # ユーザーの要望は `down --volumes --rmi all --remove-orphans` なのでそれを素直に実装する。
 
-    compose_file = "docker-compose.dind.yml" if dind else "docker-compose.yml"
-    run_command(
-        get_compose_command()
-        + ["-f", compose_file, "down", "--volumes", "--rmi", "all", "--remove-orphans"],
-        check=False,
-    )
+    if dind:
+        compose_files = ["docker-compose.dind.yml"]
+    else:
+        compose_files = ["docker-compose.yml", "tests/docker-compose.test.yml"]
+    
+    cmd = get_compose_command()
+    for f in compose_files:
+        cmd.extend(["-f", f])
+    cmd.extend(["down", "--volumes", "--rmi", "all", "--remove-orphans"])
+    run_command(cmd, check=False)
 
 
 def run_tests() -> int:
@@ -391,8 +445,8 @@ def main():
     parser.add_argument(
         "--env-file",
         type=Path,
-        default=PROJECT_ROOT / ".env.test",
-        help="Path to .env file (default: .env.test)",
+        default=PROJECT_ROOT / "tests" / ".env.test",
+        help="Path to .env file (default: tests/.env.test)",
     )
 
     args = parser.parse_args()
@@ -421,6 +475,15 @@ def main():
             reset_containers(dind=args.dind)
             # イメージを削除したため、再ビルドを強制
             args.build = True
+        
+        # --reset 時、または生成ファイルが不足している場合は再生成
+        functions_dir = PROJECT_ROOT / "tests/e2e/functions"
+        generated_files_exist = any(functions_dir.glob("*/Dockerfile"))
+        
+        if args.reset or not generated_files_exist:
+            if not generated_files_exist and not args.reset:
+                 print("[!] Generated files missing, entering auto-generation mode...")
+            generate_lambda_files()
 
         # SSL証明書生成
         print("[1/4] Checking SSL certificates...")
@@ -434,16 +497,28 @@ def main():
         # ヘルスチェック待機
         if not wait_for_scylladb():
             # ログを表示
-            compose_file = "docker-compose.dind.yml" if args.dind else "docker-compose.yml"
-            run_command(
-                get_compose_command() + ["-f", compose_file, "logs", "database"], check=False
-            )
+            if args.dind:
+                compose_files = ["docker-compose.dind.yml"]
+            else:
+                compose_files = ["docker-compose.yml", "docker-compose.test.yml"]
+            cmd = get_compose_command()
+            for f in compose_files:
+                cmd.extend(["-f", f])
+            cmd.extend(["logs", "database"])
+            run_command(cmd, check=False)
             return 1
 
         if not wait_for_gateway():
             # ログを表示
-            compose_file = "docker-compose.dind.yml" if args.dind else "docker-compose.yml"
-            run_command(get_compose_command() + ["-f", compose_file, "logs"], check=False)
+            if args.dind:
+                compose_files = ["docker-compose.dind.yml"]
+            else:
+                compose_files = ["docker-compose.yml", "docker-compose.test.yml"]
+            cmd = get_compose_command()
+            for f in compose_files:
+                cmd.extend(["-f", f])
+            cmd.extend(["logs"])
+            run_command(cmd, check=False)
             return 1
 
         # テスト実行

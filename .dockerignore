@@ -19,6 +19,7 @@ dist/
 
 # Tests and Docs
 **/tests/
+!tests/e2e/functions/
 docs/
 plans/
 *.md

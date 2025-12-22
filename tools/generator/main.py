@@ -53,6 +53,9 @@ def generate_files(
     
     paths = config.get('paths', {})
     docker_config = config.get('docker', {})
+    # Set default sitecustomize_source if not configured
+    if 'sitecustomize_source' not in docker_config:
+        docker_config['sitecustomize_source'] = 'tools/generator/lib/sitecustomize.py'
     
     # SAMテンプレートを読み込み
     sam_template_path = project_root / paths.get('sam_template', 'template.yaml')
@@ -107,14 +110,7 @@ def generate_files(
     # functions.yml を生成
     functions_yml_path = project_root / paths.get('functions_yml', 'config/functions.yml')
     
-    # ベース設定を読み込み
-    base_config_path = project_root / paths.get('functions_base', 'config/functions.base.yml')
-    base_config = {}
-    if base_config_path.exists():
-        with open(base_config_path, encoding='utf-8') as f:
-            base_config = yaml.safe_load(f) or {}
-    
-    functions_yml_content = render_functions_yml(functions, base_config)
+    functions_yml_content = render_functions_yml(functions)
     
     if dry_run:
         print(f"\n=== {functions_yml_path} ===")

@@ -47,34 +47,44 @@ graph TD
 ### サービス一覧
 ホストOS、またはDinD親コンテナ上で以下のサービス群が動作します。
 
-| サービス           | ポート | 役割                         | URL                      |
-| ------------------ | ------ | ---------------------------- | ------------------------ |
-| **Gateway API**    | `443`  | 認証・ルーティング・プロキシ | `https://localhost:443`  |
-| **Manager API**    | -      | コンテナの選定・起動・停止   | (内部通信のみ)           |
-| **RustFS API**     | `9000` | S3互換オブジェクトストレージ | `http://localhost:9000`  |
-| **ScyllaDB**       | `8001` | DynamoDB互換DB               | `http://localhost:8001`  |
-| **VictoriaLogs**   | `9428` | ログ管理 Web UI              | `http://localhost:9428`  |
+| サービス         | ポート | 役割                         | URL                     |
+| ---------------- | ------ | ---------------------------- | ----------------------- |
+| **Gateway API**  | `443`  | 認証・ルーティング・プロキシ | `https://localhost:443` |
+| **Manager API**  | -      | コンテナの選定・起動・停止   | (内部通信のみ)          |
+| **RustFS API**   | `9000` | S3互換オブジェクトストレージ | `http://localhost:9000` |
+| **ScyllaDB**     | `8001` | DynamoDB互換DB               | `http://localhost:8001` |
+| **VictoriaLogs** | `9428` | ログ管理 Web UI              | `http://localhost:9428` |
 
 ### ファイル構成
 ```
 .
-├── docker-compose.yml       # 複合サービスの構成定義
+├── docker-compose.yml       # 開発用サービス構成
+├── docker-compose.test.yml  # E2Eテスト用オーバーライド
 ├── services/
 │   ├── gateway/             # ステートレスな API ゲートウェイ
 │   │   ├── main.py              # ルーティング & プロキシロジック
 │   │   ├── client.py            # Manager 呼び出しクライアント
-│   │   ├── config.py            # 設定管理
-│   │   └── core/
-│   │       ├── security.py      # JWT認証
-│   │       └── proxy.py         # 非同期 httpx プロキシ実装
+│   │   └── config.py            # 設定管理
 │   └── manager/             # ステートフルなコンテナオーケストレーター
 │       ├── main.py              # ライフサイクル API & スケジューラー
 │       └── service.py           # Docker Python SDK を用いた操作
-├── gateway/config/          # Lambda 関数・ルート定義
-│   ├── functions.yml        # Lambda 関数リスト
-│   └── routing.yml          # パスベースのルーティング定義
-├── lambda_functions/        # Lambda 関数コード
-└── tests/                   # E2Eテスト & ユーティリティ
+├── config/                  # 設定ファイル
+│   ├── functions.yml        # Lambda 関数定義
+│   ├── routing.yml          # ルーティング定義
+│   └── gateway_log.yaml     # 構造化ログ設定
+├── tools/generator/         # SAM Template Generator
+│   ├── parser.py            # SAMテンプレートパーサー
+│   ├── renderer.py          # Dockerfile/functions.yml生成
+│   └── main.py              # CLIエントリーポイント
+├── tests/
+│   ├── e2e/                 # E2Eテスト用Lambda関数
+│   │   ├── template.yaml    # SAM Source of Truth
+│   │   ├── functions/       # Lambda関数 & 生成Dockerfile
+│   │   └── config/          # 生成された設定ファイル
+│   ├── test_e2e.py          # E2Eテストスイート
+│   └── run_tests.py         # テストランナー
+└── lib/                     # 共有ライブラリ
+    └── sitecustomize.py     # CloudWatch Logs パッチ
 ```
 
 ## クイックスタート
@@ -90,11 +100,11 @@ docker compose down
 ```
 
 #### 構成・ネットワーク設定（環境変数）
-| 変数名 | デフォルト | 説明 |
-|--------|-----------|------|
-| `IDLE_TIMEOUT_MINUTES` | `5` | アイドル状態のLambdaコンテナを停止するまでの分数 |
-| `LAMBDA_NETWORK` | `onpre-internal-network` | Lambdaコンテナが参加するDockerネットワーク名 |
-| `CONTAINER_CACHE_TTL` | `30` | Gateway のコンテナホストキャッシュ TTL（秒） |
+| 変数名                 | デフォルト               | 説明                                             |
+| ---------------------- | ------------------------ | ------------------------------------------------ |
+| `IDLE_TIMEOUT_MINUTES` | `5`                      | アイドル状態のLambdaコンテナを停止するまでの分数 |
+| `LAMBDA_NETWORK`       | `onpre-internal-network` | Lambdaコンテナが参加するDockerネットワーク名     |
+| `CONTAINER_CACHE_TTL`  | `30`                     | Gateway のコンテナホストキャッシュ TTL（秒）     |
 
 
 ```bash
@@ -133,6 +143,19 @@ E2EテストはDinD環境を起動して実行されます。
 python tests/run_tests.py --build
 ```
 ※ `--build` オプションで再ビルド可能。
+
+### SAM Template Generator
+SAMテンプレートからDockerfileと構成ファイルを自動生成するツールです。
+
+```bash
+# E2Eテスト用の生成実行
+python -m tools.generator.main --config tests/e2e/generator.yml
+```
+
+設定ファイル (`generator.yml`) で入力テンプレート (`template.yaml`) と出力先を指定します。
+生成されるもの:
+- 各Lambda関数の `Dockerfile`
+- `functions.yml` (Gateway設定用)
 
 ### API利用例 (Gateway)
 
