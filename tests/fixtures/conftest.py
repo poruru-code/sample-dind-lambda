@@ -83,36 +83,73 @@ def get_auth_token() -> str:
     return response.json()["AuthenticationResult"]["IdToken"]
 
 
-def query_victorialogs(
-    request_id: str,
-    timeout: int = VICTORIALOGS_QUERY_TIMEOUT,
+def query_victorialogs_by_filter(
+    filters: dict[str, str] | None = None,
+    raw_query: str | None = None,
     start: str | None = None,
+    end: str | None = None,
+    timeout: int = VICTORIALOGS_QUERY_TIMEOUT,
+    limit: int = 100,
+    min_hits: int = 1,
+    poll_interval: float = 1.0,
 ) -> dict:
     """
-    VictoriaLogs から RequestID を含むログをクエリ
+    VictoriaLogs から任意のフィルタ条件でログをクエリ
+
+    VictoriaLogs LogsQL API を使用:
+    - フィルタ: `field:"value"` 形式で AND 結合
+    - 時間フィルタ: start/end パラメータ (ISO8601/RFC3339 形式)
 
     Args:
-        request_id: 検索する RequestID
-        timeout: タイムアウト秒数
+        filters: フィールド名と値の辞書 (例: {"trace_id": "xxx", "container_name": "gateway"})
+        raw_query: 直接指定する LogsQL クエリ (filters と排他)
         start: 検索開始時刻 (ISO8601/RFC3339 形式, 例: "2025-12-24T01:00:00Z")
-               None の場合は時間制限なし
+        end: 検索終了時刻 (ISO8601/RFC3339 形式)
+        timeout: ポーリングタイムアウト秒数
+        limit: 取得件数上限
+        min_hits: 最小ヒット数 (この数以上のログが取得できるまでポーリング)
+        poll_interval: ポーリング間隔 (秒)
 
     Returns:
-        クエリ結果の dict (hits フィールドにログが含まれる)
-    """
-    query = f'trace_id:"{request_id}"'
-    params = {"query": query, "limit": 100}
+        クエリ結果の dict (hits フィールドにログリストが含まれる)
 
-    # 時間フィルタを追加 (VictoriaLogs API の start パラメータ)
+    Example:
+        # trace_id で検索
+        query_victorialogs_by_filter(filters={"trace_id": "1-abc123"})
+
+        # 複数フィルタ + 時間フィルタ
+        query_victorialogs_by_filter(
+            filters={"logger": "boto3.mock", "log_group": "/aws/lambda/test"},
+            start="2025-12-24T00:00:00Z",
+            min_hits=4,
+        )
+
+        # 直接 LogsQL を指定
+        query_victorialogs_by_filter(raw_query='level:ERROR AND container_name:"gateway"')
+    """
+    # クエリ文字列の構築
+    if raw_query:
+        query = raw_query
+    elif filters:
+        query_parts = [f'{k}:"{v}"' for k, v in filters.items()]
+        query = " AND ".join(query_parts)
+    else:
+        raise ValueError("Either 'filters' or 'raw_query' must be provided")
+
+    params: dict[str, str | int] = {"query": query, "limit": limit}
+
+    # 時間フィルタを追加 (VictoriaLogs HTTP API の start/end パラメータ)
     if start:
         params["start"] = start
+    if end:
+        params["end"] = end
 
     poll_start_time = time.time()
     while time.time() - poll_start_time < timeout:
         try:
-            response = requests.post(
+            response = requests.get(
                 f"{VICTORIALOGS_URL}/select/logsql/query",
-                data=params,
+                params=params,
                 timeout=DEFAULT_REQUEST_TIMEOUT,
             )
 
@@ -126,13 +163,130 @@ def query_victorialogs(
                         except json.JSONDecodeError:
                             continue
 
-                if hits:
+                if len(hits) >= min_hits:
                     return {"hits": hits}
 
-            time.sleep(1)
+            time.sleep(poll_interval)
 
         except Exception as e:
             print(f"VictoriaLogs query error: {e}")
-            time.sleep(1)
+            time.sleep(poll_interval)
 
     return {"hits": []}
+
+
+def query_victorialogs(
+    request_id: str,
+    timeout: int = VICTORIALOGS_QUERY_TIMEOUT,
+    start: str | None = None,
+) -> dict:
+    """
+    VictoriaLogs から Trace ID を含むログをクエリ (後方互換ラッパー)
+
+    Args:
+        request_id: 検索する Trace ID (root 部分)
+        timeout: タイムアウト秒数
+        start: 検索開始時刻 (ISO8601/RFC3339 形式)
+
+    Returns:
+        クエリ結果の dict (hits フィールドにログが含まれる)
+    """
+    return query_victorialogs_by_filter(
+        filters={"trace_id": request_id},
+        start=start,
+        timeout=timeout,
+    )
+
+
+@pytest.fixture(scope="module")
+def auth_token(gateway_health) -> str:
+    """認証トークンを取得 (モジュールスコープでキャッシュ)"""
+    return get_auth_token()
+
+
+def request_with_retry(
+    method: str,
+    url: str,
+    max_retries: int = 5,
+    retry_interval: float = 2.0,
+    retry_on_status: tuple[int, ...] = (500, 502, 503, 504),
+    **kwargs,
+) -> requests.Response:
+    """
+    リトライ付き HTTP リクエスト
+
+    Args:
+        method: HTTP メソッド (get, post, etc.)
+        url: リクエスト先 URL
+        max_retries: 最大リトライ回数
+        retry_interval: リトライ間隔 (秒)
+        retry_on_status: リトライ対象のステータスコード
+        **kwargs: requests に渡す追加パラメータ
+
+    Returns:
+        requests.Response オブジェクト
+    """
+    response = None
+    for i in range(max_retries):
+        try:
+            response = getattr(requests, method.lower())(url, **kwargs)
+            if response.status_code not in retry_on_status:
+                return response
+            print(f"Retry {i + 1}/{max_retries}: Status {response.status_code}")
+        except requests.exceptions.ConnectionError as e:
+            print(f"Connection error ({i + 1}/{max_retries}): {e}")
+            response = None
+
+        time.sleep(retry_interval)
+
+    if response is None:
+        raise requests.exceptions.ConnectionError(f"Failed to connect after {max_retries} retries")
+    return response
+
+
+def call_api(
+    path: str,
+    auth_token: str | None = None,
+    payload: dict | None = None,
+    method: str = "post",
+    timeout: int = DEFAULT_REQUEST_TIMEOUT,
+    **kwargs,
+) -> requests.Response:
+    """
+    Gateway 経由で API を呼び出す共通ヘルパー
+
+    Args:
+        path: API パス (例: "/api/echo", "/api/call")
+        auth_token: 認証トークン (None の場合は認証なしでリクエスト)
+        payload: リクエストボディ (JSON)
+        method: HTTP メソッド (デフォルト: post)
+        timeout: リクエストタイムアウト
+        **kwargs: requests に渡す追加パラメータ
+
+    Returns:
+        requests.Response オブジェクト
+
+    Example:
+        # 認証あり
+        response = call_api("/api/echo", auth_token, {"message": "hello"})
+
+        # 認証なし (401 テスト用)
+        response = call_api("/api/echo", payload={"message": "hello"})
+    """
+    url = f"{GATEWAY_URL}{path}"
+    headers = {}
+
+    if auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
+
+    if "headers" in kwargs:
+        headers.update(kwargs.pop("headers"))
+
+    return getattr(requests, method.lower())(
+        url,
+        json=payload,
+        headers=headers if headers else None,
+        verify=VERIFY_SSL,
+        timeout=timeout,
+        **kwargs,
+    )

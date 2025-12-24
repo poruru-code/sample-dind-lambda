@@ -1,7 +1,6 @@
 """
 オブザーバビリティ機能テスト
 
-- RequestID トレーシング
 - ログ品質とレベル制御
 - CloudWatch Logs 透過的リダイレクト
 """
@@ -14,20 +13,22 @@ import requests
 
 from tests.fixtures.conftest import (
     GATEWAY_URL,
-    VICTORIALOGS_URL,
     VERIFY_SSL,
     LOG_WAIT_TIMEOUT,
-    get_auth_token,
     query_victorialogs,
+    query_victorialogs_by_filter,
+    call_api,
 )
 
 
 class TestObservability:
     """ロギング・オブザーバビリティ機能の検証"""
 
-    def test_log_quality_and_level_control(self, gateway_health):
+    def test_structured_log_format(self, auth_token):
         """
         E2E: ロギングの品質と環境変数によるレベル制御の検証
+
+        Echo Lambda を使用してシンプルにログ品質を確認。
         """
 
         # 検証用のユニークな Trace ID とメッセージ
@@ -36,29 +37,16 @@ class TestObservability:
         trace_id = f"Root=1-{epoch_hex}-{unique_id};Sampled=1"
         root_id = f"1-{epoch_hex}-{unique_id}"
 
-        debug_msg = f"DEBUG_LOG_VALIDATION_{uuid.uuid4()}"
-
-        # 認証
-        token = get_auth_token()
-
-        # ヘッダーに検証用IDをセットしてリクエスト（Gatewayでログ出力されることを期待）
-        # 同時に、ボディにデバッグメッセージを含めて、Lambda側でも（あれば）出力させる
-        response = requests.post(
-            f"{GATEWAY_URL}/api/s3",
-            json={
-                "action": "test",
-                "bucket": "e2e-test-bucket",
-                "debug_msg": debug_msg,
-            },
-            headers={
-                "Authorization": f"Bearer {token}",
-                "X-Amzn-Trace-Id": trace_id,
-            },
-            verify=VERIFY_SSL,
+        # Echo Lambda を呼び出し (S3 依存なし)
+        response = call_api(
+            "/api/echo",
+            auth_token,
+            {"message": "Log quality test"},
+            headers={"X-Amzn-Trace-Id": trace_id},
         )
         assert response.status_code == 200
 
-        # Gatewayコンテナのログを検索
+        # Gateway コンテナのログを検索
         print(f"Waiting for logs with Root ID: {root_id} ...")
 
         start_time = time.time()
@@ -72,21 +60,18 @@ class TestObservability:
             hits = logs.get("hits", [])
             if hits:
                 for log in hits:
-                    # 1. 構造化ログ（JSON）であることの確認（hitsに入っている時点でJSONパース済み）
-                    # 必須フィールドの確認
+                    # 1. 構造化ログ（JSON）であることの確認
                     if "level" in log and ("message" in log or "_msg" in log):
                         found_structured_log = True
 
                     # 2. _time フィールドの確認
                     if "_time" in log:
-                        # 形式確認（数値または文字列のタイムスタンプ）
                         ts = log["_time"]
                         if isinstance(ts, (int, float)) or (
                             isinstance(ts, str) and ts.replace(".", "").isdigit()
                         ):
                             found_time_field = True
                         elif isinstance(ts, str):
-                            # ISO format check could be here
                             found_time_field = True
 
                     # 3. DEBUG レベルのログ確認
@@ -102,7 +87,7 @@ class TestObservability:
         assert found_time_field, "_time field not found or invalid"
         assert found_debug_log, "DEBUG level log not found. Check LOG_LEVEL env var."
 
-    def test_cloudwatch_logs_via_boto3(self, gateway_health):
+    def test_cloudwatch_logs_passthrough(self, gateway_health):
         """
         E2E: CloudWatch Logs API 透過的リダイレクト検証
         """
@@ -124,34 +109,24 @@ class TestObservability:
         # 2. ログが VictoriaLogs に伝搬するまで待機
         time.sleep(5)
 
-        # 3. VictoriaLogs でログを検索
-        vlogs_url = f"{VICTORIALOGS_URL}/select/logsql/query"
-        query = f'logger:boto3.mock AND log_group:"{log_group}" AND log_stream:"{log_stream}"'
-
-        max_retries = 10
-        found_logs = False
-        log_entries = []
-        for i in range(max_retries):
-            r = requests.get(vlogs_url, params={"query": query, "limit": 20}, timeout=10)
-            if r.status_code == 200 and r.text.strip():
-                lines = r.text.strip().split("\n")
-                if lines and lines[0]:
-                    log_entries = [json.loads(line) for line in lines if line.strip()]
-                    # 4つ全てのログが届くまでリトライする
-                    if len(log_entries) >= 4:
-                        found_logs = True
-                        print(f"Found {len(log_entries)} log entries in VictoriaLogs")
-                        break
-                    else:
-                        print(
-                            f"Found only {len(log_entries)}/4 logs, retrying... ({i + 1}/{max_retries})"
-                        )
-            time.sleep(2)
+        # 3. VictoriaLogs でログを検索 (共通ヘルパーを使用)
+        result = query_victorialogs_by_filter(
+            raw_query=f'logger:boto3.mock AND log_group:"{log_group}" AND log_stream:"{log_stream}"',
+            timeout=30,
+            limit=20,
+            min_hits=4,
+            poll_interval=2.0,
+        )
+        log_entries = result.get("hits", [])
+        found_logs = len(log_entries) >= 4
 
         assert found_logs, (
             f"CloudWatch Logs not found in VictoriaLogs for log_group={log_group}. "
+            f"Found only {len(log_entries)}/4 logs. "
             "Check Gateway /aws/logs endpoint and Fluent Bit configuration."
         )
+
+        print(f"Found {len(log_entries)} log entries in VictoriaLogs")
 
         for entry in log_entries:
             container_name = entry.get("container_name", "")
