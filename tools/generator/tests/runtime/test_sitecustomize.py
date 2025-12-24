@@ -11,9 +11,9 @@ class TestSiteCustomize(unittest.TestCase):
         if "sitecustomize" in sys.modules:
             del sys.modules["sitecustomize"]
 
-        # runtime パスの追加 (パスが存在する場合のみ)
+        # runtime/site-packages パスの追加
         self.runtime_path = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "../../runtime")
+            os.path.join(os.path.dirname(__file__), "../../runtime/site-packages")
         )
         if self.runtime_path not in sys.path:
             sys.path.insert(0, self.runtime_path)
@@ -149,7 +149,11 @@ class TestSiteCustomize(unittest.TestCase):
                 # ユーザー定義のパッチ関数を直接テスト
                 resp = returned_client._make_api_call(
                     "PutLogEvents",
-                    {"logGroupName": "test", "logStreamName": "test", "logEvents": []},
+                    {
+                        "logGroupName": "test",
+                        "logStreamName": "test",
+                        "logEvents": [{"timestamp": 1234567890000, "message": "test log"}],
+                    },
                 )
 
                 # レスポンスがモックされたものか確認

@@ -75,10 +75,17 @@ def test_gateway_handler_propagates_trace_id(mock_invoker):
     # Parse payload (JSON event)
     event = json.loads(payload_bytes)
 
+    import uuid
+
+    # Request ID should now be a UUID, NOT the Trace Root
+    req_id = event["requestContext"]["requestId"]
     expected_root_id = "1-integration-999-abcdef0123456789abcdef01"
-    assert event["requestContext"]["requestId"] == expected_root_id, (
-        f"Expected {expected_root_id}, got {event['requestContext']['requestId']}"
-    )
+
+    assert req_id != expected_root_id, "Request ID should be independent of Trace ID"
+    try:
+        uuid.UUID(req_id)
+    except ValueError:
+        pytest.fail(f"Request ID is not a valid UUID: {req_id}")
 
     # Clean up
     app.dependency_overrides = {}

@@ -33,8 +33,8 @@ async def test_v1_event_builder_build():
 
     # Act
     with patch(
-        "services.gateway.core.event_builder.get_trace_id",
-        return_value="Root=1-12345678-abcdef0123456789abcdef01;Sampled=1",
+        "services.common.core.request_context.get_request_id",
+        return_value="req-uuid-1234",
     ):
         event = await builder.build(
             request=request,
@@ -57,9 +57,46 @@ async def test_v1_event_builder_build():
 
     # Context checks
     context = event["requestContext"]
-    assert context["requestId"] == "1-12345678-abcdef0123456789abcdef01"
+    assert context["requestId"] == "req-uuid-1234"
     assert context["identity"]["sourceIp"] == "127.0.0.1"
     assert context["authorizer"]["claims"]["cognito:username"] == user_id
+
+
+@pytest.mark.asyncio
+async def test_event_builder_uses_generated_request_id():
+    """Event BuilderがContextのRequest IDを使用することを確認"""
+    from unittest.mock import MagicMock
+    from services.common.core import request_context
+
+    # Arrange
+    builder = V1ProxyEventBuilder()
+    request = MagicMock(spec=Request)
+    request.url.path = "/test"
+    request.method = "GET"
+    request.headers = MagicMock()
+    request.headers.keys.return_value = []  # keys() iterator
+    request.headers.getlist.return_value = []
+    request.headers.get.return_value = "gzip"  # for content-encoding check
+    request.query_params = {}
+    request.client.host = "1.2.3.4"
+    request.scope = {"http_version": "1.1"}
+
+    # Contextセット
+    trace_id_str = "Root=1-abc-123;Sampled=1"
+
+    request_context.clear_trace_id()
+    request_context.set_trace_id(trace_id_str)
+
+    # UUIDを生成してContextにセット
+    req_id_str = request_context.generate_request_id()
+
+    # Act
+    event = await builder.build(request, b"")
+
+    # Assert
+    # requestContext.requestId should match the generated ID, NOT the Trace ID root
+    assert event["requestContext"]["requestId"] == req_id_str
+    assert event["requestContext"]["requestId"] != "1-abc-123"
 
 
 @pytest.mark.asyncio
