@@ -80,6 +80,9 @@ class ContainerManager:
                 vl_port = os.environ.get("VICTORIALOGS_PORT", "9428")
                 env["VICTORIALOGS_URL"] = f"http://{vl_host}:{vl_port}/insert/jsonline"
 
+                # AWS Lambda 互換環境変数を設定（sitecustomize.py での動的ログ処理に使用）
+                env["AWS_LAMBDA_FUNCTION_NAME"] = name
+
                 logger.info(f"Environment variables for {name}: {env}")
 
                 try:
