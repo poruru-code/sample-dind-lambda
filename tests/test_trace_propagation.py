@@ -15,7 +15,7 @@ class TestTracePropagation:
         1. Lambda A が返す trace_id が送信した Trace ID と一致するか
         2. テスト開始時刻以降のログで、Trace ID が全ての通過コンポーネントに出現するか
            - onpre-gateway
-           - lambda-trace-chain
+           - lambda-integration
            - lambda-connectivity
         """
         # テスト開始時刻を記録
@@ -31,7 +31,7 @@ class TestTracePropagation:
         payload = {"next_target": "lambda-connectivity"}
 
         response = requests.post(
-            f"{GATEWAY_URL}/2015-03-31/functions/lambda-trace-chain/invocations",
+            f"{GATEWAY_URL}/2015-03-31/functions/lambda-integration/invocations",
             json=payload,
             headers={"Authorization": f"Bearer {auth_token}", "X-Amzn-Trace-Id": custom_trace_id},
             verify=VERIFY_SSL,

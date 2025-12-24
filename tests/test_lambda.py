@@ -31,7 +31,7 @@ class TestLambda:
 
     def test_sync_chain_invoke(self, auth_token):
         """同期連鎖呼び出し: Client -> Gateway -> Chain (boto3 sync) -> Echo"""
-        response = call_api("/api/call", auth_token, {"next_target": "lambda-echo"})
+        response = call_api("/api/lambda", auth_token, {"next_target": "lambda-echo"})
 
         assert response.status_code == 200
         data = response.json()
@@ -48,7 +48,9 @@ class TestLambda:
 
     def test_async_chain_invoke(self, auth_token):
         """非同期連鎖呼び出し: Client -> Gateway -> Chain (boto3 async) -> Echo"""
-        response = call_api("/api/call", auth_token, {"next_target": "lambda-echo", "async": True})
+        response = call_api(
+            "/api/lambda", auth_token, {"next_target": "lambda-echo", "async": True}
+        )
 
         assert response.status_code == 200
         data = response.json()

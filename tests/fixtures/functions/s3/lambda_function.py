@@ -1,20 +1,31 @@
+"""
+S3 互換 Lambda (RustFS/MinIO)
+
+S3 API 操作を提供するシンプルな Lambda 関数。
+"""
+
 import json
 import boto3
 from datetime import datetime, timezone
-from common.utils import parse_event_body, create_response
+from common.utils import handle_ping, parse_event_body, create_response
+from trace_bridge import hydrate_trace_id
 
 
-def handle(event, context):
-    # requestContextからユーザー名を取得
+@hydrate_trace_id
+def lambda_handler(event, context):
+    # RIE Heartbeat
+    if ping_response := handle_ping(event):
+        return ping_response
+
+    # requestContext からユーザー名を取得
     request_context = event.get("requestContext", {})
     username = request_context.get("authorizer", {}).get("cognito:username", "anonymous")
     request_id = request_context.get("requestId", "unknown")
 
-    # Body extraction setup for logging
     body = parse_event_body(event)
-    log_action = body.get("action", "unknown")
+    action = body.get("action", "test")
 
-    # 構造化ログ出力 (for VictoriaLogs)
+    # 構造化ログ出力
     timestamp = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
     print(
         json.dumps(
@@ -22,23 +33,20 @@ def handle(event, context):
                 "_time": timestamp,
                 "level": "INFO",
                 "request_id": request_id,
-                "message": f"Received event: action={log_action}",
-                "function": "integration-s3",
+                "message": f"Received event: action={action}",
+                "function": "s3-integration",
             }
         )
     )
 
-    action = body.get("action", "test")
     bucket = body.get("bucket", "test-bucket")
     key = body.get("key", "test-key.txt")
-    data = body.get("data", "Hello from Lambda!")
+    data = body.get("body", body.get("data", "Hello from Lambda!"))
 
     try:
-        # 透過的パッチ(sitecustomize.py)に依存してクライアントを作成
         s3_client = boto3.client("s3")
 
         if action == "test":
-            # 接続テスト: バケット一覧を取得
             response = s3_client.list_buckets()
             result = {
                 "action": "test",
@@ -48,7 +56,6 @@ def handle(event, context):
             }
 
         elif action == "put":
-            # オブジェクトをアップロード
             response = s3_client.put_object(
                 Bucket=bucket,
                 Key=key,
@@ -65,7 +72,6 @@ def handle(event, context):
             }
 
         elif action == "get":
-            # オブジェクトを取得
             response = s3_client.get_object(Bucket=bucket, Key=key)
             content = response["Body"].read().decode("utf-8")
             result = {
@@ -78,7 +84,6 @@ def handle(event, context):
             }
 
         elif action == "list":
-            # オブジェクト一覧を取得
             response = s3_client.list_objects_v2(Bucket=bucket, Prefix=body.get("prefix", ""))
             result = {
                 "action": "list",
@@ -89,7 +94,6 @@ def handle(event, context):
             }
 
         elif action == "create_bucket":
-            # バケット作成
             try:
                 s3_client.create_bucket(
                     Bucket=bucket,

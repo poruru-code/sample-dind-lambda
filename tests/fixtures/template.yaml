@@ -32,32 +32,51 @@ Resources:
             Path: /api/hello
             Method: post
 
+  # Lambda 連鎖呼び出し (旧 trace-chain -> integration)
   IntegrationFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: lambda-integration
-      CodeUri: tests/fixtures/functions/integration/
+      CodeUri: tests/fixtures/functions/lambda/
+      Events:
+        LambdaApi:
+          Type: Api
+          Properties:
+            Path: /api/lambda
+            Method: post
+
+  # S3 互換 API
+  S3IntegrationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: lambda-s3
+      CodeUri: tests/fixtures/functions/s3/
       Events:
         S3Api:
           Type: Api
           Properties:
             Path: /api/s3
             Method: post
-        DynamoApi:
-          Type: Api
-          Properties:
-            Path: /api/dynamo
-            Method: post
-        InvokeApi:
-          Type: Api
-          Properties:
-            Path: /api/invoke
-            Method: post
       Environment:
         Variables:
           S3_ENDPOINT: "http://onpre-storage:9000"
           RUSTFS_ROOT_USER: "rustfsadmin"
           RUSTFS_ROOT_PASSWORD: "rustfsadmin"
+
+  # DynamoDB 互換 API
+  DynamoIntegrationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: lambda-dynamo
+      CodeUri: tests/fixtures/functions/dynamo/
+      Events:
+        DynamoApi:
+          Type: Api
+          Properties:
+            Path: /api/dynamo
+            Method: post
+      Environment:
+        Variables:
           DYNAMODB_ENDPOINT: "http://onpre-database:8000"
 
   # --- Phase 2: Storage & Database リソース定義 ---
@@ -100,16 +119,4 @@ Resources:
           Type: Api
           Properties:
             Path: /api/faulty
-            Method: post
-
-  TraceChainFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: lambda-trace-chain
-      CodeUri: tests/fixtures/functions/trace-chain/
-      Events:
-        ChainApi:
-          Type: Api
-          Properties:
-            Path: /api/call
             Method: post

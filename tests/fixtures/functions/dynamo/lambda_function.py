@@ -1,9 +1,16 @@
+"""
+DynamoDB 互換 Lambda (ScyllaDB)
+
+DynamoDB API 操作を提供するシンプルな Lambda 関数。
+"""
+
 import json
-import logging
 import uuid
 import time
+import logging
 import boto3
-from common.utils import create_response
+from common.utils import handle_ping, create_response
+from trace_bridge import hydrate_trace_id
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -11,11 +18,15 @@ logger.setLevel(logging.INFO)
 TABLE_NAME = "e2e-test-table"
 
 
-def handle(event, context):
+@hydrate_trace_id
+def lambda_handler(event, context):
+    # RIE Heartbeat
+    if ping_response := handle_ping(event):
+        return ping_response
+
     logger.info(f"Received event: {json.dumps(event)}")
 
     try:
-        # 透過的パッチに依存してクライアントを作成
         dynamodb = boto3.client("dynamodb")
 
         # Create item
