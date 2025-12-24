@@ -17,6 +17,7 @@ from tests.fixtures.conftest import (
     LOG_WAIT_TIMEOUT,
     query_victorialogs,
     query_victorialogs_by_filter,
+    call_api,
 )
 
 
@@ -37,14 +38,11 @@ class TestObservability:
         root_id = f"1-{epoch_hex}-{unique_id}"
 
         # Echo Lambda を呼び出し (S3 依存なし)
-        response = requests.post(
-            f"{GATEWAY_URL}/api/echo",
-            json={"message": "Log quality test"},
-            headers={
-                "Authorization": f"Bearer {auth_token}",
-                "X-Amzn-Trace-Id": trace_id,
-            },
-            verify=VERIFY_SSL,
+        response = call_api(
+            "/api/echo",
+            auth_token,
+            {"message": "Log quality test"},
+            headers={"X-Amzn-Trace-Id": trace_id},
         )
         assert response.status_code == 200
 

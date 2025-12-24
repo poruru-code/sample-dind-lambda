@@ -21,6 +21,7 @@ from tests.fixtures.conftest import (
     STABILIZATION_WAIT,
     query_victorialogs,
     request_with_retry,
+    call_api,
 )
 
 
@@ -36,12 +37,7 @@ class TestResilience:
 
         # 1. 最初の呼び出し（コンテナ起動）
         print("Step 1: Initial Lambda invocation (cold start)...")
-        response1 = requests.post(
-            f"{GATEWAY_URL}/api/echo",
-            json={"message": "warmup"},
-            headers={"Authorization": f"Bearer {auth_token}"},
-            verify=VERIFY_SSL,
-        )
+        response1 = call_api("/api/echo", auth_token, {"message": "warmup"})
         assert response1.status_code == 200
         data1 = response1.json()
         assert data1["success"] is True
@@ -108,11 +104,11 @@ class TestResilience:
         trace_id_1 = f"Root=1-{epoch_hex_1}-{unique_id_1};Sampled=1"
         root_id_1 = f"1-{epoch_hex_1}-{unique_id_1}"
 
-        resp1 = requests.post(
-            f"{GATEWAY_URL}/api/faulty",
-            json={"action": "hello"},
-            headers={"Authorization": f"Bearer {auth_token}", "X-Amzn-Trace-Id": trace_id_1},
-            verify=VERIFY_SSL,
+        resp1 = call_api(
+            "/api/faulty",
+            auth_token,
+            {"action": "hello"},
+            headers={"X-Amzn-Trace-Id": trace_id_1},
         )
         assert resp1.status_code == 200, f"First request failed: {resp1.text}"
 
@@ -122,11 +118,11 @@ class TestResilience:
         trace_id_2 = f"Root=1-{epoch_hex_2}-{unique_id_2};Sampled=1"
         root_id_2 = f"1-{epoch_hex_2}-{unique_id_2}"
 
-        resp2 = requests.post(
-            f"{GATEWAY_URL}/api/faulty",
-            json={"action": "hello"},
-            headers={"Authorization": f"Bearer {auth_token}", "X-Amzn-Trace-Id": trace_id_2},
-            verify=VERIFY_SSL,
+        resp2 = call_api(
+            "/api/faulty",
+            auth_token,
+            {"action": "hello"},
+            headers={"X-Amzn-Trace-Id": trace_id_2},
         )
         assert resp2.status_code == 200, f"Second request failed: {resp2.text}"
 
@@ -158,25 +154,14 @@ class TestResilience:
 
         # 1. ウォームアップ
         print("Warming up lambda-faulty...")
-        requests.post(
-            f"{GATEWAY_URL}/api/faulty",
-            json={"action": "hello"},
-            headers={"Authorization": f"Bearer {auth_token}"},
-            verify=VERIFY_SSL,
-        )
+        call_api("/api/faulty", auth_token, {"action": "hello"})
 
         try:
             # 2. 失敗を繰り返す
             for i in range(3):
                 print(f"Attempt {i + 1} (crashing lambda)...")
                 start = time.time()
-                resp = requests.post(
-                    f"{GATEWAY_URL}/api/faulty",
-                    json={"action": "crash"},
-                    headers={"Authorization": f"Bearer {auth_token}"},
-                    verify=VERIFY_SSL,
-                    timeout=10,
-                )
+                resp = call_api("/api/faulty", auth_token, {"action": "crash"}, timeout=10)
                 duration = time.time() - start
                 print(f"Status: {resp.status_code}, Body: {resp.text}, Latency: {duration:.2f}s")
                 assert resp.status_code == 502, f"Expected 502, got {resp.status_code}"
@@ -184,13 +169,7 @@ class TestResilience:
             # 3. 4回目リクエスト (Circuit Breaker OPEN)
             print("Request 4 (expecting Circuit Breaker Open)...")
             start = time.time()
-            resp = requests.post(
-                f"{GATEWAY_URL}/api/faulty",
-                json={"action": "hello"},
-                headers={"Authorization": f"Bearer {auth_token}"},
-                verify=VERIFY_SSL,
-                timeout=10,
-            )
+            resp = call_api("/api/faulty", auth_token, {"action": "hello"}, timeout=10)
             duration = time.time() - start
             print(f"Status: {resp.status_code}, Body: {resp.text}, Latency: {duration:.2f}s")
 
@@ -203,12 +182,7 @@ class TestResilience:
 
             # 5. 復旧確認
             print("Request 5 (expecting recovery)...")
-            resp = requests.post(
-                f"{GATEWAY_URL}/api/faulty",
-                json={"action": "hello"},
-                headers={"Authorization": f"Bearer {auth_token}"},
-                verify=VERIFY_SSL,
-            )
+            resp = call_api("/api/faulty", auth_token, {"action": "hello"})
             assert resp.status_code == 200, f"Recovery failed: {resp.text}"
             print("Circuit Breaker recovered successfully")
 

@@ -246,7 +246,7 @@ def request_with_retry(
 
 def call_api(
     path: str,
-    auth_token: str,
+    auth_token: str | None = None,
     payload: dict | None = None,
     method: str = "post",
     timeout: int = DEFAULT_REQUEST_TIMEOUT,
@@ -256,8 +256,8 @@ def call_api(
     Gateway 経由で API を呼び出す共通ヘルパー
 
     Args:
-        path: API パス (例: "/api/echo", "/api/chain")
-        auth_token: 認証トークン
+        path: API パス (例: "/api/echo", "/api/call")
+        auth_token: 認証トークン (None の場合は認証なしでリクエスト)
         payload: リクエストボディ (JSON)
         method: HTTP メソッド (デフォルト: post)
         timeout: リクエストタイムアウト
@@ -267,11 +267,17 @@ def call_api(
         requests.Response オブジェクト
 
     Example:
+        # 認証あり
         response = call_api("/api/echo", auth_token, {"message": "hello"})
-        data = response.json()
+
+        # 認証なし (401 テスト用)
+        response = call_api("/api/echo", payload={"message": "hello"})
     """
     url = f"{GATEWAY_URL}{path}"
-    headers = {"Authorization": f"Bearer {auth_token}"}
+    headers = {}
+
+    if auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
 
     if "headers" in kwargs:
         headers.update(kwargs.pop("headers"))
@@ -279,7 +285,7 @@ def call_api(
     return getattr(requests, method.lower())(
         url,
         json=payload,
-        headers=headers,
+        headers=headers if headers else None,
         verify=VERIFY_SSL,
         timeout=timeout,
         **kwargs,

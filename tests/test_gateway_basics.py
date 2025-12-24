@@ -10,6 +10,7 @@ import requests
 from tests.fixtures.conftest import (
     GATEWAY_URL,
     VERIFY_SSL,
+    call_api,
 )
 
 
@@ -29,21 +30,12 @@ class TestGatewayBasics:
 
     def test_routing_401(self, gateway_health):
         """E2E: 認証なし → 401"""
-        response = requests.post(
-            f"{GATEWAY_URL}/api/s3",
-            json={"action": "test", "bucket": "e2e-test-bucket"},
-            verify=VERIFY_SSL,
-        )
+        response = call_api("/api/echo", payload={"message": "test"})
         if response.status_code != 401:
             print(f"Debug 401 Error: {response.status_code} - {response.text}")
         assert response.status_code == 401
 
     def test_routing_404(self, auth_token):
         """E2E: 存在しないルート → 404"""
-        response = requests.post(
-            f"{GATEWAY_URL}/api/nonexistent",
-            json={"action": "test"},
-            headers={"Authorization": f"Bearer {auth_token}"},
-            verify=VERIFY_SSL,
-        )
+        response = call_api("/api/nonexistent", auth_token, {"action": "test"})
         assert response.status_code == 404
