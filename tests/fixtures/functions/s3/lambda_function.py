@@ -5,6 +5,7 @@ S3 API 操作を提供するシンプルな Lambda 関数。
 """
 
 import json
+import os
 import boto3
 from datetime import datetime, timezone
 from common.utils import handle_ping, parse_event_body, create_response
@@ -15,10 +16,13 @@ def lambda_handler(event, context):
     if ping_response := handle_ping(event):
         return ping_response
 
-    # requestContext からユーザー名を取得
-    request_context = event.get("requestContext", {})
-    username = request_context.get("authorizer", {}).get("cognito:username", "anonymous")
-    request_id = request_context.get("requestId", "unknown")
+    # 環境変数から Trace ID を取得
+    trace_id = os.environ.get("_X_AMZN_TRACE_ID", "not-found")
+
+    # ユーザー情報を取得
+    username = (
+        event.get("requestContext", {}).get("authorizer", {}).get("cognito:username", "anonymous")
+    )
 
     body = parse_event_body(event)
     action = body.get("action", "test")
@@ -30,7 +34,7 @@ def lambda_handler(event, context):
             {
                 "_time": timestamp,
                 "level": "INFO",
-                "request_id": request_id,
+                "trace_id": trace_id,
                 "message": f"Received event: action={action}",
                 "function": "s3-integration",
             }

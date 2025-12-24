@@ -20,23 +20,23 @@ def lambda_handler(event, context):
     username = (
         event.get("requestContext", {}).get("authorizer", {}).get("cognito:username", "anonymous")
     )
-    request_id = event.get("requestContext", {}).get("requestId", "unknown")
 
     message = f"Echo: {body.get('message', 'Hello')}"
 
     # 構造化ログを出力 (VictoriaLogs 検索用)
-    print(
-        json.dumps(
-            {
-                "_time": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
-                "level": "INFO",
-                "request_id": request_id,
-                "trace_id": trace_id,
-                "message": message,
-                "function": "lambda-echo",
-            }
-        )
-    )
+    # sitecustomize のフックにより trace_id, container_name, job が自動付与されるが、
+    # 明示的にも出力して一貫性を検証する
+    log_entry = {
+        "_time": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+        "level": "INFO",
+        "trace_id": trace_id,
+        "message": message,
+        "function": "lambda-echo",
+    }
+    print(json.dumps(log_entry))
+
+    # DEBUG ログ (テスト要件)
+    print(json.dumps({**log_entry, "level": "DEBUG", "message": "Debug log for quality test"}))
 
     return create_response(
         body={

@@ -176,7 +176,7 @@ def query_victorialogs_by_filter(
 
 
 def query_victorialogs(
-    request_id: str,
+    trace_id_root: str,
     timeout: int = VICTORIALOGS_QUERY_TIMEOUT,
     start: str | None = None,
 ) -> dict:
@@ -184,7 +184,7 @@ def query_victorialogs(
     VictoriaLogs から Trace ID を含むログをクエリ (後方互換ラッパー)
 
     Args:
-        request_id: 検索する Trace ID (root 部分)
+        trace_id_root: 検索する Trace ID (root 部分)
         timeout: タイムアウト秒数
         start: 検索開始時刻 (ISO8601/RFC3339 形式)
 
@@ -192,7 +192,7 @@ def query_victorialogs(
         クエリ結果の dict (hits フィールドにログが含まれる)
     """
     return query_victorialogs_by_filter(
-        filters={"trace_id": request_id},
+        filters={"trace_id": trace_id_root},
         start=start,
         timeout=timeout,
     )

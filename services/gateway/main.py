@@ -109,7 +109,7 @@ app = FastAPI(
 
 # ミドルウェアの登録（デコレーター方式）
 @app.middleware("http")
-async def request_id_middleware(request: Request, call_next):
+async def trace_propagation_middleware(request: Request, call_next):
     """
     Middleware for Trace ID propagation and structured access logging.
     """
@@ -124,8 +124,6 @@ async def request_id_middleware(request: Request, call_next):
 
     if trace_id_str:
         try:
-            # Trace ID が Root= 形式の場合はパースしてセット
-            # set_trace_id 内でパースと Request ID 同期が行われる
             set_trace_id(trace_id_str)
         except Exception as e:
             logger.warning(
@@ -147,19 +145,16 @@ async def request_id_middleware(request: Request, call_next):
 
         # レスポンスヘッダーへの付与
         response.headers["X-Amzn-Trace-Id"] = trace_id_str
-        # X-Request-Id は廃止するが、互換性のために当面ログ等で必要なら内部利用のみとする
-        # 外部ヘッダーからは削除
 
         # Calculate process time
         process_time = time.perf_counter() - start_time
         process_time_ms = round(process_time * 1000, 2)
 
         # Structured Access Log
-
-        # uvicorn.access is disabled (WARNING level), so this is the main access log.
         logger.info(
             f"{request.method} {request.url.path} {response.status_code}",
             extra={
+                "trace_id": trace_id_str,
                 "method": request.method,
                 "path": request.url.path,
                 "status": response.status_code,

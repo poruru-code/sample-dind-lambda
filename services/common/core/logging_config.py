@@ -38,8 +38,8 @@ class CustomJsonFormatter(logging.Formatter):
     """
 
     def format(self, record: logging.LogRecord) -> str:
-        # Trace ID resolution (trace_id > request_id for backward compat)
-        trace_id = getattr(record, "trace_id", None) or getattr(record, "request_id", None)
+        # Trace ID resolution
+        trace_id = getattr(record, "trace_id", None)
         if not trace_id:
             try:
                 from .request_context import get_trace_id
@@ -144,6 +144,14 @@ class VictoriaLogsHandler(logging.Handler):
                 log_entry = json.loads(msg)
             except json.JSONDecodeError:
                 log_entry = {"message": msg, "level": record.levelname}
+
+            # stream_fields をログデータ本体にもマージする
+            # URLパラメータだけでなく、JSONボディにも含めることで
+            # VictoriaLogsが確実にストリームとして認識できるようにする
+            if self.stream_fields:
+                for k, v in self.stream_fields.items():
+                    if k not in log_entry:
+                        log_entry[k] = v
 
             # URLパラメータ構築
             params = [

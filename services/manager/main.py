@@ -6,7 +6,6 @@ import asyncio
 from .service import ContainerManager
 import docker.errors
 from services.common.core.request_context import (
-    get_request_id,
     set_trace_id,
 )
 from .config import config
@@ -56,7 +55,7 @@ app = FastAPI(lifespan=lifespan)
 # ミドルウェアの登録（デコレーター方式）
 # ミドルウェアの登録（デコレーター方式）
 @app.middleware("http")
-async def request_id_middleware(request: Request, call_next):
+async def trace_propagation_middleware(request: Request, call_next):
     """Trace ID ヘッダーをキャプチャし、ContextVar に設定するミドルウェア"""
     from services.common.core.trace import TraceId
 
@@ -73,20 +72,20 @@ async def request_id_middleware(request: Request, call_next):
             trace_id_str = str(trace)
             set_trace_id(trace_id_str)
     else:
-        # Trace ID がない場合は新規生成 (Gateway からのリクエストには必ずあるはずだが、直接呼び出し対策)
+        # Trace ID がない場合は新規生成
         trace = TraceId.generate()
         trace_id_str = str(trace)
         set_trace_id(trace_id_str)
 
-    # ログ出力 (trace_id は CustomJsonFormatter で自動付与される)
-    logger.info(f"Request: {request.method} {request.url.path}")
+    # ログ出力 (trace_id を明示的に渡す)
+    logger.info(f"Request: {request.method} {request.url.path}", extra={"trace_id": trace_id_str})
 
     try:
         response = await call_next(request)
         # レスポンスヘッダーに付与
         response.headers["X-Amzn-Trace-Id"] = trace_id_str
 
-        logger.info(f"Response: {response.status_code}")
+        logger.info(f"Response: {response.status_code}", extra={"trace_id": trace_id_str})
         return response
     finally:
         # クリーンアップ
@@ -100,7 +99,6 @@ async def ensure_container(req: ContainerEnsureRequest, request: Request):
     """
     Ensures a container with the given function name is running.
     """
-    get_request_id()
 
     try:
         host = await manager.ensure_container_running(req.function_name, req.image, req.env)

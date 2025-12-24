@@ -2,46 +2,43 @@ import logging
 import json
 import pytest
 import asyncio
-import warnings
 from services.common.core.request_context import (
-    set_request_id,
-    get_request_id,
-    clear_request_id,
+    get_trace_id,
     set_trace_id,
     clear_trace_id,
 )
 from services.common.core.logging_config import CustomJsonFormatter
 
 
-def test_request_context_basic():
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        clear_request_id()
-        assert get_request_id() is None
+def test_trace_context_basic():
+    clear_trace_id()
+    assert get_trace_id() is None
 
-        rid = set_request_id("test-id")
-        assert rid == "test-id"
-        assert get_request_id() == "test-id"
+    tid = "Root=1-6789abcd-1234567890abcdef12345678;Sampled=1"
+    result = set_trace_id(tid)
+    assert result == tid
+    assert get_trace_id() == tid
 
-        clear_request_id()
-        assert get_request_id() is None
+    clear_trace_id()
+    assert get_trace_id() is None
 
 
 @pytest.mark.asyncio
-async def test_request_context_isolation():
-    async def task(name, delay):
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            set_request_id(name)
-            await asyncio.sleep(delay)
-            return get_request_id()
+async def test_trace_context_isolation():
+    async def task(tid, delay):
+        set_trace_id(tid)
+        await asyncio.sleep(delay)
+        return get_trace_id()
 
-    results = await asyncio.gather(task("rid-1", 0.02), task("rid-2", 0.01))
-    assert results[0] == "rid-1"
-    assert results[1] == "rid-2"
+    tid1 = "Root=1-aaaaaaaa-aaaaaaaaaaaaaaaaaaaaaaaa;Sampled=1"
+    tid2 = "Root=1-bbbbbbbb-bbbbbbbbbbbbbbbbbbbbbbbb;Sampled=1"
+
+    results = await asyncio.gather(task(tid1, 0.02), task(tid2, 0.01))
+    assert results[0] == tid1
+    assert results[1] == tid2
 
 
-def test_custom_json_formatter():
+def test_custom_json_formatter_with_trace():
     formatter = CustomJsonFormatter()
     log_record = logging.LogRecord(
         name="test-logger",
@@ -59,9 +56,10 @@ def test_custom_json_formatter():
     assert output["message"] == "Test message"
     assert "trace_id" not in output
 
-    # With TraceID (using new API)
-    set_trace_id("Root=1-12345678-abcdef123456789012345678;Sampled=1")
+    # With TraceID
+    tid = "Root=1-12345678-abcdef123456789012345678;Sampled=1"
+    set_trace_id(tid)
     output = json.loads(formatter.format(log_record))
-    assert output["trace_id"] == "Root=1-12345678-abcdef123456789012345678;Sampled=1"
+    assert output["trace_id"] == tid
 
     clear_trace_id()

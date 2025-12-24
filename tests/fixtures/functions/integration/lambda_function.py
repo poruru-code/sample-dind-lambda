@@ -17,10 +17,6 @@ def lambda_handler(event, context):
     trace_id = os.environ.get("_X_AMZN_TRACE_ID", "not-found")
     logger.info(f"Trace ID in environment: {trace_id}")
 
-    # Context からの Request ID も記録
-    aws_request_id = context.aws_request_id
-    logger.info(f"AWS Request ID in context: {aws_request_id}")
-
     # ボディのパース (API Gateway or Direct)
     body = parse_event_body(event)
     next_target = body.get("next_target")
@@ -49,7 +45,6 @@ def lambda_handler(event, context):
         body={
             "success": True,
             "trace_id": trace_id,
-            "aws_request_id": aws_request_id,
             "child": child_info,
         }
     )

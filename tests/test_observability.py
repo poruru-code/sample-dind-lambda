@@ -87,6 +87,13 @@ class TestObservability:
         assert found_time_field, "_time field not found or invalid"
         assert found_debug_log, "DEBUG level log not found. Check LOG_LEVEL env var."
 
+        # UNKNOWN コンテナ名がないことを確認（Lambda 環境変数が正しく設定されていることの検証）
+        unknown_logs = [log for log in hits if log.get("container_name") == "UNKNOWN"]
+        assert len(unknown_logs) == 0, (
+            f"Found {len(unknown_logs)} logs with container_name='UNKNOWN'. "
+            "AWS_LAMBDA_FUNCTION_NAME environment variable may not be set correctly."
+        )
+
     def test_cloudwatch_logs_passthrough(self, gateway_health):
         """
         E2E: CloudWatch Logs API 透過的リダイレクト検証

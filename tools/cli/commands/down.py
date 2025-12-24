@@ -1,5 +1,4 @@
 import subprocess
-import sys
 from tools.cli.config import PROJECT_ROOT
 from dotenv import load_dotenv
 from tools.cli.core import logging
@@ -21,4 +20,25 @@ def run(args):
         logging.success("Services stopped.")
     except subprocess.CalledProcessError as e:
         logging.error(f"Failed to stop services: {e}")
-        sys.exit(1)
+        # compose down に失敗しても Lambda コンテナのクリーンアップは試みる
+
+    # Lambda コンテナ（created_by=sample-dind）のクリーンアップ
+    import docker
+
+    try:
+        client = docker.from_env()
+        lambda_containers = client.containers.list(
+            all=True, filters={"label": "created_by=sample-dind"}
+        )
+        if lambda_containers:
+            logging.step(f"Cleaning up {len(lambda_containers)} Lambda containers...")
+            for container in lambda_containers:
+                try:
+                    if container.status == "running":
+                        container.kill()
+                    container.remove(force=True)
+                except Exception as e:
+                    logging.warning(f"Failed to remove container {container.name}: {e}")
+            logging.success("Lambda containers cleaned up.")
+    except Exception as e:
+        logging.warning(f"Failed to cleanup Lambda containers: {e}")

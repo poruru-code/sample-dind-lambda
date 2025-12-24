@@ -67,17 +67,16 @@ class V1ProxyEventBuilder(EventBuilder):
             headers[key] = values[-1] if values else ""
             multi_headers[key] = values
 
-        # RequestID取得 (Contextから優先的に取得)
-        # RequestID取得 (Contextから優先的に取得、なければTraceIDからRootID抽出)
+        # RequestID取得 (ContextのTraceIDからRootID抽出)
         trace_id_str = get_trace_id()
         if trace_id_str:
             try:
                 trace = TraceId.parse(trace_id_str)
-                request_id = trace.to_root_id()
+                aws_request_id = trace.to_root_id()
             except Exception:
-                request_id = f"req-{int(time.time() * 1000)}"
+                aws_request_id = f"req-{int(time.time() * 1000)}"
         else:
-            request_id = f"req-{int(time.time() * 1000)}"
+            aws_request_id = f"req-{int(time.time() * 1000)}"
 
         # HTTP バージョン取得
         http_version = (
@@ -103,7 +102,7 @@ class V1ProxyEventBuilder(EventBuilder):
                     claims={"cognito:username": user_id, "username": user_id},
                     cognito_username=user_id,
                 ),
-                requestId=request_id,
+                requestId=aws_request_id,
                 path=str(request.url.path),
                 stage="prod",
                 protocol=f"HTTP/{http_version}",
