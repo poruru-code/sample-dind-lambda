@@ -6,6 +6,7 @@ DynamoDB 互換テスト (ScyllaDB)
 """
 
 import time
+import uuid
 
 import pytest
 
@@ -16,13 +17,11 @@ from tests.fixtures.conftest import (
 )
 
 
-class TestDynamoCompat:
+class TestDynamo:
     """DynamoDB 互換性の検証"""
 
     def test_dynamo_put_get(self, auth_token):
         """E2E: DynamoDB PutItem/GetItem 互換テスト (ScyllaDB)"""
-        # ScyllaDBの起動待ち（Lambdaが起動するまでリトライ）
-        # WindowsのDocker Desktop (WSL2) ではScyllaDBの起動に3-5分かかる場合がある
         max_retries = SCYLLA_WAIT_RETRIES
         response = None
 
@@ -30,15 +29,13 @@ class TestDynamoCompat:
             response = call_api(
                 "/api/dynamo",
                 auth_token,
-                {"action": "dynamo-test", "bucket": "e2e-test-bucket"},
+                {"action": "put_get"},
             )
 
             if response.status_code == 200:
                 break
 
             print(f"Status: {response.status_code}, Body: {response.text}")
-
-            # 500 (Application Error/DB Not Ready) or 502 (Bad Gateway) -> Retry
             if response.status_code not in [500, 502, 503, 504]:
                 break
 
@@ -48,13 +45,85 @@ class TestDynamoCompat:
         if response is None:
             pytest.fail("Lambda integration failed: No response received")
 
-        if response.status_code != 200:
-            print(f"Final Failure Response: {response.text}")
-
         assert response.status_code == 200
         data = response.json()
-        print(f"Response Data: {data}")
         assert data["success"] is True
         assert "item_id" in data
         assert "retrieved_item" in data
         assert data["retrieved_item"]["id"]["S"] == data["item_id"]
+
+    def test_dynamo_update_item(self, auth_token):
+        """E2E: DynamoDB UpdateItem 互換テスト"""
+        # 1. PutItem
+        put_response = call_api(
+            "/api/dynamo",
+            auth_token,
+            {"action": "put", "message": "Original message"},
+        )
+        assert put_response.status_code == 200
+        item_id = put_response.json()["item_id"]
+
+        # 2. UpdateItem
+        update_response = call_api(
+            "/api/dynamo",
+            auth_token,
+            {"action": "update", "id": item_id, "message": "Updated message"},
+        )
+        assert update_response.status_code == 200
+        assert update_response.json()["success"] is True
+
+        # 3. GetItem → 更新を確認
+        get_response = call_api(
+            "/api/dynamo",
+            auth_token,
+            {"action": "get", "id": item_id},
+        )
+        assert get_response.status_code == 200
+        data = get_response.json()
+        assert data["found"] is True
+        assert data["item"]["message"]["S"] == "Updated message"
+
+    def test_dynamo_delete_item(self, auth_token):
+        """E2E: DynamoDB DeleteItem 互換テスト"""
+        # 1. PutItem
+        put_response = call_api(
+            "/api/dynamo",
+            auth_token,
+            {"action": "put", "message": "To be deleted"},
+        )
+        assert put_response.status_code == 200
+        item_id = put_response.json()["item_id"]
+
+        # 2. DeleteItem
+        delete_response = call_api(
+            "/api/dynamo",
+            auth_token,
+            {"action": "delete", "id": item_id},
+        )
+        assert delete_response.status_code == 200
+        assert delete_response.json()["deleted"] is True
+
+        # 3. GetItem → 見つからないことを確認
+        get_response = call_api(
+            "/api/dynamo",
+            auth_token,
+            {"action": "get", "id": item_id},
+        )
+        assert get_response.status_code == 200
+        data = get_response.json()
+        assert data["found"] is False
+
+    def test_dynamo_get_nonexistent(self, auth_token):
+        """E2E: DynamoDB 存在しないアイテム取得テスト"""
+        fake_id = str(uuid.uuid4())
+
+        response = call_api(
+            "/api/dynamo",
+            auth_token,
+            {"action": "get", "id": fake_id},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["found"] is False
+        assert data["item"] is None

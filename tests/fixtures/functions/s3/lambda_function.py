@@ -93,6 +93,16 @@ def lambda_handler(event, context):
                 "user": username,
             }
 
+        elif action == "delete":
+            s3_client.delete_object(Bucket=bucket, Key=key)
+            result = {
+                "action": "delete",
+                "success": True,
+                "bucket": bucket,
+                "key": key,
+                "user": username,
+            }
+
         elif action == "create_bucket":
             try:
                 s3_client.create_bucket(
