@@ -1,9 +1,12 @@
+import os
 import sys
+import yaml
+import subprocess
 from . import build
 from tools.provisioner import main as provisioner
+from tools.cli import config as cli_config
 from tools.cli.config import PROJECT_ROOT
 from dotenv import load_dotenv
-import subprocess
 
 
 from tools.cli.core import logging
@@ -44,7 +47,22 @@ def run(args):
         logging.info(f"Loading environment variables from {logging.highlight(env_file)}")
         load_dotenv(env_file, override=False)
 
-    # 1. ビルド要求があれば実行
+    # 1. カスタム設定の反映 (generator.yml があればパスを環境変数にセット)
+    config_path = cli_config.E2E_DIR / "generator.yml"
+    if config_path.exists():
+        try:
+            with open(config_path, "r") as f:
+                config = yaml.safe_load(f)
+            
+            paths = config.get("paths", {})
+            if "functions_yml" in paths:
+                os.environ["GATEWAY_FUNCTIONS_YML"] = str(paths["functions_yml"])
+            if "routing_yml" in paths:
+                os.environ["GATEWAY_ROUTING_YML"] = str(paths["routing_yml"])
+        except Exception as e:
+            logging.warning(f"Failed to load generator.yml for environment injection: {e}")
+
+    # 2. ビルド要求があれば実行
     if getattr(args, "build", False):
         build.run(args)
 

@@ -63,7 +63,6 @@ def parse_sam_template(content: str, parameters: dict | None = None) -> dict:
     default_runtime = globals_config.get("Runtime", "python3.12")
     default_handler = globals_config.get("Handler", "lambda_function.lambda_handler")
     default_timeout = globals_config.get("Timeout", 30)
-    default_timeout = globals_config.get("Timeout", 30)
     default_memory = globals_config.get("MemorySize", 128)
     default_layers = globals_config.get("Layers", [])
 
@@ -85,6 +84,7 @@ def parse_sam_template(content: str, parameters: dict | None = None) -> dict:
 
         # コードURI
         code_uri = props.get("CodeUri", "./")
+        code_uri = _resolve_intrinsic(code_uri, parameters)
         if not code_uri.endswith("/"):
             code_uri += "/"
 
@@ -142,6 +142,7 @@ def parse_sam_template(content: str, parameters: dict | None = None) -> dict:
             layer_name = props.get("LayerName", logical_id)
             layer_name = _resolve_intrinsic(layer_name, parameters)
             content_uri = props.get("ContentUri", "./")
+            content_uri = _resolve_intrinsic(content_uri, parameters)
             if not content_uri.endswith("/"):
                 content_uri += "/"
 

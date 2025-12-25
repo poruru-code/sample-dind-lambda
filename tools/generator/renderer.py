@@ -11,6 +11,7 @@ from jinja2 import Environment, FileSystemLoader
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 
 
+
 def render_dockerfile(
     func_config: dict,
     docker_config: dict,
@@ -20,24 +21,22 @@ def render_dockerfile(
 
     Args:
         func_config: 関数設定
-            - name: 関数名
-            - code_uri: コードパス
-            - handler: ハンドラ
-            - runtime: ランタイム (e.g., 'python3.12')
-            - has_requirements: requirements.txt があるか
         docker_config: Docker設定
-            - sitecustomize_source: sitecustomize.pyのパス
-
-    Returns:
-        Dockerfile文字列
     """
-    env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
+    env = Environment(
+        loader=FileSystemLoader(TEMPLATE_DIR),
+        trim_blocks=True,
+        lstrip_blocks=True,
+    )
     template = env.get_template("Dockerfile.j2")
 
-    # ランタイムからPythonバージョンを抽出 (e.g., 'python3.12' -> '3.12')
+    # ランタイムからPythonバージョンを抽出
     runtime = func_config.get("runtime", "python3.12")
     python_version = runtime.replace("python", "")
 
+    # Layerの分離 (Zip vs Directory)
+    layers = func_config.get("layers", [])
+    
     context = {
         "name": func_config.get("name", "unknown"),
         "python_version": python_version,
@@ -47,7 +46,7 @@ def render_dockerfile(
         "code_uri": func_config.get("code_uri", "./"),
         "handler": func_config.get("handler", "lambda_function.lambda_handler"),
         "has_requirements": func_config.get("has_requirements", False),
-        "layers": func_config.get("layers", []),
+        "layers": layers,
     }
 
     return template.render(context)
@@ -67,7 +66,11 @@ def render_functions_yml(
     Returns:
         functions.yml文字列
     """
-    env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
+    env = Environment(
+        loader=FileSystemLoader(TEMPLATE_DIR),
+        trim_blocks=True,
+        lstrip_blocks=True,
+    )
     template = env.get_template("functions.yml.j2")
 
     return template.render(functions=functions)
@@ -87,7 +90,11 @@ def render_routing_yml(
     Returns:
         routing.yml文字列
     """
-    env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
+    env = Environment(
+        loader=FileSystemLoader(TEMPLATE_DIR),
+        trim_blocks=True,
+        lstrip_blocks=True,
+    )
     template = env.get_template("routing.yml.j2")
 
     return template.render(functions=functions)

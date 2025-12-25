@@ -113,6 +113,8 @@ services:
       - "${GATEWAY_PORT:-443}:443" # HTTPS
     volumes:
       - ./certs:/app/config/ssl:ro
+      - ${GATEWAY_FUNCTIONS_YML:-./config/functions.yml}:/app/config/functions.yml:ro
+      - ${GATEWAY_ROUTING_YML:-./config/routing.yml}:/app/config/routing.yml:ro
     environment:
       - UVICORN_BIND_ADDR=0.0.0.0:443
       - ENABLE_SSL=true

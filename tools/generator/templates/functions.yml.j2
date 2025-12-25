@@ -12,10 +12,10 @@ defaults:
 functions:
 {% for func in functions %}
   {{ func.name }}:
-    {%- if func.environment %}
+    {% if func.environment %}
     environment:
-      {%- for key, value in func.environment.items() %}
+      {% for key, value in func.environment.items() %}
       {{ key }}: "{{ value }}"
-      {%- endfor %}
-    {%- endif %}
+      {% endfor %}
+    {% endif %}
 {% endfor %}

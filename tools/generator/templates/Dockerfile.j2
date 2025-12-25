@@ -3,29 +3,25 @@
 # Source: template.yaml
 # FunctionName: {{ name }}
 
+
 FROM esb-lambda-base:latest
 
+# ESB Runtime
+COPY sitecustomize.py /opt/python/sitecustomize.py
+
 {% for layer in layers %}
-# ---------------------------------------------------
 # Layer: {{ layer.name }}
-# ---------------------------------------------------
 COPY {{ layer.content_uri }} /opt/
 {% endfor %}
-
 {% if has_requirements %}
-# ---------------------------------------------------
-# 関数固有の依存パッケージ
-# ---------------------------------------------------
+
+# Function dependencies
 COPY {{ code_uri }}requirements.txt ${LAMBDA_TASK_ROOT}/
 RUN pip install -r ${LAMBDA_TASK_ROOT}/requirements.txt
-
 {% endif %}
-# ---------------------------------------------------
-# 関数コードの配置
-# ---------------------------------------------------
+
+# Function code
 COPY {{ code_uri }} ${LAMBDA_TASK_ROOT}/
 
-# ---------------------------------------------------
-# ハンドラ指定
-# ---------------------------------------------------
+# Handler
 CMD [ "{{ handler }}" ]

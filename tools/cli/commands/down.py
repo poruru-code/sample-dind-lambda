@@ -2,6 +2,7 @@ import subprocess
 from tools.cli.config import PROJECT_ROOT
 from dotenv import load_dotenv
 from tools.cli.core import logging
+from importlib.metadata import metadata
 
 
 def run(args):
@@ -14,6 +15,8 @@ def run(args):
     cmd = ["docker", "compose", "down", "--remove-orphans"]
     if getattr(args, "volumes", False):
         cmd.append("--volumes")
+    if getattr(args, "rmi", False):
+        cmd.extend(["--rmi", "all"])
 
     try:
         subprocess.check_call(cmd)
@@ -22,13 +25,14 @@ def run(args):
         logging.error(f"Failed to stop services: {e}")
         # compose down に失敗しても Lambda コンテナのクリーンアップは試みる
 
-    # Lambda コンテナ（created_by=sample-dind）のクリーンアップ
+    # Lambda コンテナ（created_by=edge-serverless-box）のクリーンアップ
     import docker
 
     try:
         client = docker.from_env()
+        project_name = metadata("edge-serverless-box")["Name"]
         lambda_containers = client.containers.list(
-            all=True, filters={"label": "created_by=sample-dind"}
+            all=True, filters={"label": f"created_by={project_name}"}
         )
         if lambda_containers:
             logging.step(f"Cleaning up {len(lambda_containers)} Lambda containers...")
