@@ -98,8 +98,10 @@ def generate_files(
         dockerfile_content = render_dockerfile(func, docker_config)
 
         if dry_run:
-            print(f"\n=== {dockerfile_path} ===")
-            print(dockerfile_content)
+            print(f"\n📄 [DryRun] Target: {dockerfile_path}")
+            print("-" * 60)
+            print(dockerfile_content.strip())
+            print("-" * 60)
         else:
             if verbose:
                 print(f"Generating: {dockerfile_path}")
@@ -113,8 +115,10 @@ def generate_files(
     functions_yml_content = render_functions_yml(functions)
 
     if dry_run:
-        print(f"\n=== {functions_yml_path} ===")
-        print(functions_yml_content)
+        print(f"\n📄 [DryRun] Target: {functions_yml_path}")
+        print("-" * 60)
+        print(functions_yml_content.strip())
+        print("-" * 60)
     else:
         if verbose:
             print(f"Generating: {functions_yml_path}")
@@ -127,8 +131,10 @@ def generate_files(
     routing_yml_content = render_routing_yml(functions)
 
     if dry_run:
-        print(f"\n=== {routing_yml_path} ===")
-        print(routing_yml_content)
+        print(f"\n📄 [DryRun] Target: {routing_yml_path}")
+        print("-" * 60)
+        print(routing_yml_content.strip())
+        print("-" * 60)
     else:
         if verbose:
             print(f"Generating: {routing_yml_path}")

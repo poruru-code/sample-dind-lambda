@@ -100,6 +100,12 @@ def build_function_images(no_cache=False, verbose=False):
 
 
 def run(args):
+    dry_run = getattr(args, "dry_run", False)
+    verbose = getattr(args, "verbose", False)
+
+    if dry_run:
+        logging.info("Running in DRY-RUN mode. No files will be written, no images built.")
+
     # 1. 設定ファイル生成 (Phase 1 Generator)
     logging.step("Generating configurations...")
     logging.info(f"Using template: {logging.highlight(TEMPLATE_YAML)}")
@@ -116,12 +122,18 @@ def run(args):
         config["paths"] = {}
     config["paths"]["sam_template"] = str(TEMPLATE_YAML)
 
-    generator.generate_files(config=config, project_root=PROJECT_ROOT, dry_run=False, verbose=False)
+    generator.generate_files(
+        config=config, project_root=PROJECT_ROOT, dry_run=dry_run, verbose=verbose
+    )
+
+    if dry_run:
+        logging.success("Dry-run complete. Exiting.")
+        return
+
     logging.success("Configurations generated.")
 
     # 2. ベースイメージビルド
     no_cache = getattr(args, "no_cache", False)
-    verbose = getattr(args, "verbose", False)
 
     if not build_base_image(no_cache=no_cache):
         import sys

@@ -25,6 +25,11 @@ def main():
     build_parser.add_argument(
         "--no-cache", action="store_true", help="Do not use cache when building images"
     )
+    build_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be generated without writing files or building",
+    )
 
     # --- up command ---
     up_parser = subparsers.add_parser("up", help="Start the environment")
