@@ -50,6 +50,13 @@ DEFAULT_FUNCTIONS_YML = E2E_DIR / "config" / "functions.yml"
 def set_template_yaml(template_path: str) -> None:
     """CLI引数からテンプレートパスを設定する（最優先）"""
     global TEMPLATE_YAML, E2E_DIR, DEFAULT_ROUTING_YML, DEFAULT_FUNCTIONS_YML
+    
+    # WSL対応: /mnt/C/path... -> /mnt/c/path... に正規化
+    parts = template_path.split("/")
+    if len(parts) > 3 and parts[1] == "mnt" and len(parts[2]) == 1 and parts[2].isupper():
+        parts[2] = parts[2].lower()
+        template_path = "/".join(parts)
+
     TEMPLATE_YAML = Path(template_path).resolve()
     E2E_DIR = TEMPLATE_YAML.parent
     DEFAULT_ROUTING_YML = E2E_DIR / "config" / "routing.yml"
