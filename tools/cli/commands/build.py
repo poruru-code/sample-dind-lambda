@@ -1,4 +1,8 @@
 import docker
+import os
+import sys
+import yaml
+from pathlib import Path
 from tools.generator import main as generator
 from tools.cli import config as cli_config
 from tools.cli.core import logging
@@ -48,38 +52,33 @@ def _extract_function_name_from_dockerfile(dockerfile_path) -> str | None:
     return None
 
 
-def build_function_images(no_cache=False, verbose=False):
+def build_function_images(functions, template_path, no_cache=False, verbose=False):
     """
-    生成されたDockerfileを見つけてイメージをビルドする
+    各関数のイメージをビルドする
     """
     client = docker.from_env()
-    functions_dir = cli_config.E2E_DIR / "functions"
+    sam_template_path = Path(template_path)
 
     logging.step("Building function images...")
 
-    if not functions_dir.exists():
-        logging.warning(f"Functions directory {functions_dir} not found.")
-        return
-
-    # functionsディレクトリ以下のDockerfileを探索
-    for dockerfile in sorted(functions_dir.rglob("Dockerfile")):
-        # Dockerfile から FunctionName を抽出
-        function_name = _extract_function_name_from_dockerfile(dockerfile)
-        if not function_name:
-            logging.warning(f"FunctionName not found in {dockerfile}, skipping.")
+    for func in functions:
+        function_name = func["name"]
+        dockerfile_path = func.get("dockerfile_path")
+        context_path = func.get("context_path")
+        
+        if not dockerfile_path or not Path(dockerfile_path).exists():
+            logging.warning(f"Dockerfile not found for {function_name} at {dockerfile_path}")
             continue
 
         image_tag = f"{function_name}:latest"
 
         print(f"  • Building {logging.highlight(image_tag)} ...", end="", flush=True)
         try:
-            # ビルドコンテキストを PROJECT_ROOT に設定し、
-            # Dockerfile の相対パスを PROJECT_ROOT から計算する
-            relative_dockerfile = dockerfile.relative_to(cli_config.PROJECT_ROOT).as_posix()
-
+            # ビルドコンテキストは生成されたステージングディレクトリ (context_path)
+            # Dockerfile名は "Dockerfile" 固定
             client.images.build(
-                path=str(cli_config.PROJECT_ROOT),
-                dockerfile=relative_dockerfile,
+                path=str(context_path),
+                dockerfile="Dockerfile",
                 tag=image_tag,
                 nocache=no_cache,
                 rm=True,
@@ -92,10 +91,7 @@ def build_function_images(no_cache=False, verbose=False):
                 raise
             else:
                 logging.error(f"Build failed for {image_tag}. Use --verbose for details.")
-                # Non-verbose: exit or raise without trace?
-                # CLI usually should stop on error.
                 import sys
-
                 sys.exit(1)
 
 
@@ -111,9 +107,24 @@ def run(args):
     logging.info(f"Using template: {logging.highlight(cli_config.TEMPLATE_YAML)}")
 
     # Generator の設定をロード
+    # テンプレートと同じディレクトリにある generator.yml を優先
     config_path = cli_config.E2E_DIR / "generator.yml"
+    
     if not config_path.exists():
-        config_path = cli_config.PROJECT_ROOT / "tests/fixtures/generator.yml"
+        import questionary
+        from tools.cli.commands import init
+        
+        print(f"ℹ Configuration file not found at: {config_path}")
+        if questionary.confirm("Do you want to initialize configuration now?").ask():
+            # Init コマンドを呼び出し (引数は現在の args を流用、ただし template だけ渡す)
+            init_args = type('Args', (), {'template': str(cli_config.TEMPLATE_YAML)})
+            init.run(init_args)
+            # Init完了後、再度ビルドを継続するか確認しても良いが、一旦終了する
+            logging.info("Configuration initialized. Please run build command again.")
+            return
+        else:
+            logging.error("Configuration file missing. Cannot proceed.")
+            return
 
     config = generator.load_config(config_path)
 
@@ -122,7 +133,7 @@ def run(args):
         config["paths"] = {}
     config["paths"]["sam_template"] = str(cli_config.TEMPLATE_YAML)
 
-    generator.generate_files(
+    functions = generator.generate_files(
         config=config,
         project_root=cli_config.PROJECT_ROOT,
         dry_run=dry_run,
@@ -144,6 +155,11 @@ def run(args):
         sys.exit(1)
 
     # 3. Lambda関数イメージビルド
-    build_function_images(no_cache=no_cache, verbose=verbose)
+    build_function_images(
+        functions=functions,
+        template_path=cli_config.TEMPLATE_YAML,
+        no_cache=no_cache,
+        verbose=verbose,
+    )
 
     logging.success("Build complete.")

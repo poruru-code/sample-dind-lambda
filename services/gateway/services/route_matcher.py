@@ -34,8 +34,8 @@ class RouteMatcher:
         """
         try:
             with open(self.config_path, "r", encoding="utf-8") as f:
-                cfg = yaml.safe_load(f)
-                self._routing_config = cfg.get("routes", [])
+                cfg = yaml.safe_load(f) or {}
+                self._routing_config = cfg.get("routes") or []
                 logger.info(f"Loaded {len(self._routing_config)} routes from {self.config_path}")
         except FileNotFoundError:
             logger.warning(f"Warning: Routing config not found at {self.config_path}")

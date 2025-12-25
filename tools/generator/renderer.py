@@ -11,6 +11,7 @@ from jinja2 import Environment, FileSystemLoader
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 
 
+
 def render_dockerfile(
     func_config: dict,
     docker_config: dict,
@@ -20,23 +21,26 @@ def render_dockerfile(
 
     Args:
         func_config: 関数設定
-            - name: 関数名
-            - code_uri: コードパス
-            - handler: ハンドラ
-            - runtime: ランタイム (e.g., 'python3.12')
-            - has_requirements: requirements.txt があるか
         docker_config: Docker設定
-            - sitecustomize_source: sitecustomize.pyのパス
-
-    Returns:
-        Dockerfile文字列
     """
     env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
     template = env.get_template("Dockerfile.j2")
 
-    # ランタイムからPythonバージョンを抽出 (e.g., 'python3.12' -> '3.12')
+    # ランタイムからPythonバージョンを抽出
     runtime = func_config.get("runtime", "python3.12")
     python_version = runtime.replace("python", "")
+
+    # Layerの分離 (Zip vs Directory)
+    layers = func_config.get("layers", [])
+    
+    zip_layers = [
+        l for l in layers 
+        if l.get("content_uri", "").rstrip("/").endswith(".zip")
+    ]
+    other_layers = [
+        l for l in layers 
+        if not l.get("content_uri", "").rstrip("/").endswith(".zip")
+    ]
 
     context = {
         "name": func_config.get("name", "unknown"),
@@ -47,7 +51,9 @@ def render_dockerfile(
         "code_uri": func_config.get("code_uri", "./"),
         "handler": func_config.get("handler", "lambda_function.lambda_handler"),
         "has_requirements": func_config.get("has_requirements", False),
-        "layers": func_config.get("layers", []),
+        "layers": layers, # Keep full list for compatibility if needed, but we use separate lists now
+        "zip_layers": zip_layers,
+        "other_layers": other_layers,
     }
 
     return template.render(context)

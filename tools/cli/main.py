@@ -8,7 +8,7 @@ project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-from tools.cli.commands import build, up, watch, down, reset  # noqa: E402
+from tools.cli.commands import build, up, watch, down, reset, init  # noqa: E402
 
 
 def main():
@@ -20,6 +20,10 @@ def main():
     )
     subparsers = parser.add_subparsers(dest="command", required=True, help="Command to execute")
 
+    # --- init command ---
+    subparsers.add_parser("init", help="Initialize generator configuration interactively")
+    # Note: --template is handled by main parser, not subparser
+
     # --- build command ---
     build_parser = subparsers.add_parser("build", help="Generate config and build function images")
     build_parser.add_argument(
@@ -30,6 +34,7 @@ def main():
         action="store_true",
         help="Show what would be generated without writing files or building",
     )
+    build_parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
 
     # --- up command ---
     up_parser = subparsers.add_parser("up", help="Start the environment")
@@ -66,7 +71,9 @@ def main():
         set_template_yaml(args.template)
 
     try:
-        if args.command == "build":
+        if args.command == "init":
+            init.run(args)
+        elif args.command == "build":
             build.run(args)
         elif args.command == "up":
             up.run(args)

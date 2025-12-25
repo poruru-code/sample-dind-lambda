@@ -16,7 +16,7 @@ Resources:
     Type: AWS::Serverless::LayerVersion
     Properties:
       LayerName: common-lib
-      ContentUri: tests/fixtures/layers/common/
+      ContentUri: /layers/common/
       CompatibleRuntimes:
         - python3.12
 
@@ -24,7 +24,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: lambda-connectivity
-      CodeUri: tests/fixtures/functions/connectivity/
+      CodeUri: /functions/connectivity/
       Events:
         HelloApi:
           Type: Api
@@ -37,7 +37,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: lambda-integration
-      CodeUri: tests/fixtures/functions/integration/
+      CodeUri: /functions/integration/
       Events:
         LambdaApi:
           Type: Api
@@ -50,7 +50,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: lambda-s3
-      CodeUri: tests/fixtures/functions/s3/
+      CodeUri: /functions/s3/
       Events:
         S3Api:
           Type: Api
@@ -68,7 +68,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: lambda-dynamo
-      CodeUri: tests/fixtures/functions/dynamo/
+      CodeUri: /functions/dynamo/
       Events:
         DynamoApi:
           Type: Api
@@ -101,7 +101,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: lambda-echo
-      CodeUri: tests/fixtures/functions/echo/
+      CodeUri: /functions/echo/
       Events:
         EchoApi:
           Type: Api
@@ -113,7 +113,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: lambda-chaos
-      CodeUri: tests/fixtures/functions/chaos/
+      CodeUri: /functions/chaos/
       Events:
         FaultyApi:
           Type: Api

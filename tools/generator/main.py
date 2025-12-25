@@ -38,7 +38,7 @@ def generate_files(
     project_root: Path | None = None,
     dry_run: bool = False,
     verbose: bool = False,
-) -> None:
+) -> list:
     """
     SAMテンプレートからファイルを生成
 
@@ -55,15 +55,23 @@ def generate_files(
     docker_config = config.get("docker", {})
     # Set default sitecustomize_source if not configured
     if "sitecustomize_source" not in docker_config:
-        docker_config["sitecustomize_source"] = "tools/generator/runtime/sitecustomize.py"
+        docker_config["sitecustomize_source"] = "tools/generator/runtime/site-packages/sitecustomize.py"
 
     # SAMテンプレートを読み込み
-    sam_template_path = project_root / paths.get("sam_template", "template.yaml")
+    # sam_template パスが絶対パスならそのまま、相対なら project_root から
+    sam_template_path = Path(paths.get("sam_template", "template.yaml"))
+    if not sam_template_path.is_absolute():
+        sam_template_path = (project_root / sam_template_path).resolve()
+    
     if not sam_template_path.exists():
         raise FileNotFoundError(f"SAM template not found: {sam_template_path}")
 
+    # 基準ディレクトリ（これ以降の相対パスの起点）をテンプレートの親ディレクトリとする
+    base_dir = sam_template_path.parent
+
     if verbose:
         print(f"Loading SAM template: {sam_template_path}")
+        print(f"Base directory for resolution: {base_dir}")
 
     with open(sam_template_path, encoding="utf-8") as f:
         sam_content = f.read()
@@ -78,40 +86,139 @@ def generate_files(
     if verbose:
         print(f"Found {len(functions)} function(s)")
 
-    # 出力ディレクトリ
-    project_root / paths.get("output_dir", "lambda_functions/")
+    import shutil
+
+    # 出力ディレクトリ (base_dir 相対)
+    output_dir_raw = Path(paths.get("output_dir", ".esb/"))
+    if not output_dir_raw.is_absolute():
+        output_dir = (base_dir / output_dir_raw).resolve()
+    else:
+        output_dir = output_dir_raw
+
+    functions_staging_dir = output_dir / "functions"
+
+    if not dry_run and functions_staging_dir.exists():
+        if verbose:
+            print(f"Cleaning up staging directory: {functions_staging_dir}")
+        shutil.rmtree(functions_staging_dir)
+
+    def _resolve_resource_path(p: str) -> Path:
+        """テンプレートファイルからの相対パスを解決する"""
+        # Leading slash がある場合も取り除いて、テンプレート（base_dir）相対として扱う
+        path_str = p.lstrip("/")
+        target = (base_dir / path_str).resolve()
+        if not target.exists():
+            if verbose:
+                print(f"WARNING: Resource not found at: {target}")
+        return target
 
     # 各関数のDockerfileを生成
     for func in functions:
-        func["name"]
+        func_name = func["name"]
         code_uri = func["code_uri"]
 
-        # code_uri からディレクトリ名を決定
-        # template.yaml からの相対パスとして解決し、正規化
-        func_dir = (sam_template_path.parent / code_uri).resolve()
-        dockerfile_path = func_dir / "Dockerfile"
+        # 1. Staging Directory の準備 (<output_dir>/functions/<func_name>)
+        dockerfile_dir = functions_staging_dir / func_name
+        dockerfile_dir.mkdir(parents=True, exist_ok=True)
 
-        # requirements.txt の存在チェック
-        requirements_path = func_dir / "requirements.txt"
-        func["has_requirements"] = requirements_path.exists()
+        # 2. ソースコードのコピー (Staging内)
+        func_src_dir = _resolve_resource_path(code_uri)
+        staging_src_dir = dockerfile_dir / "src"
+        if func_src_dir.exists() and func_src_dir.is_dir():
+            shutil.copytree(func_src_dir, staging_src_dir, dirs_exist_ok=True)
+        
+        # RendererにはStaging内での相対パスを伝える
+        func["code_uri"] = "src/"
+        func["dockerfile_path"] = str(dockerfile_dir / "Dockerfile")
+        func["context_path"] = str(dockerfile_dir)
+
+        # 3. レイヤーのコピー (Staging内)
+        new_layers = []
+        for layer in func.get("layers", []):
+            # 元のオブジェクトを壊さないようにコピー
+            layer_copy = layer.copy()
+            content_uri = layer_copy.get("content_uri", "")
+            if not content_uri:
+                continue
+                
+            layer_src = _resolve_resource_path(content_uri)
+            
+            if layer_src.exists():
+                target_name = layer_src.name
+                layers_dir = dockerfile_dir / "layers"
+                layers_dir.mkdir(parents=True, exist_ok=True)
+                
+                if layer_src.is_file():
+                    # すでにファイル（Zip想定）の場合はそのままコピー
+                    staging_layer_path = layers_dir / target_name
+                    shutil.copy2(layer_src, staging_layer_path)
+                    layer_copy["content_uri"] = f"layers/{target_name}"
+                else:
+                    # ディレクトリの場合は Zip 化して Staging に置く
+                    # これにより、Dockerfile側で unzip すれば AWS Lambda と同じ構造（/opt/python/等）になる
+                    zip_base_name = layers_dir / target_name
+                    if verbose:
+                        print(f"Archiving layer directory: {layer_src} -> {zip_base_name}.zip")
+                    shutil.make_archive(str(zip_base_name), 'zip', layer_src)
+                    layer_copy["content_uri"] = f"layers/{target_name}.zip"
+                
+                new_layers.append(layer_copy)
+        
+        # この関数専用の、ローカルパスに書き換えたレイヤーリスト
+        func["layers"] = new_layers
+
+
+        # 4. sitecustomize.py のコピー
+        # sitecustomize_source も base_dir 相対で解決を試み、なければプロジェクトルート相対
+        site_path_raw = Path(docker_config.get("sitecustomize_source"))
+        if not site_path_raw.is_absolute():
+            site_src = (base_dir / site_path_raw).resolve()
+            if not site_src.exists():
+                # フォールバック: プロジェクトルート (generatorパッケージ内のデフォルト等)
+                site_src = (project_root / site_path_raw).resolve()
+        else:
+            site_src = site_path_raw
+
+        if verbose:
+            print(f"DEBUG: site_src={site_src}, exists={site_src.exists()}")
+        if site_src.exists():
+            shutil.copy2(site_src, dockerfile_dir / "sitecustomize.py")
+        else:
+            if verbose:
+                print(f"WARNING: sitecustomize.py not found at {site_src}")
+        # Dockerfile内からは直下を参照するように上書き
+        docker_config_copy = docker_config.copy()
+        docker_config_copy["sitecustomize_source"] = "sitecustomize.py"
+
+        # requirements.txt の存在チェック (context内)
+        func["has_requirements"] = (staging_src_dir / "requirements.txt").exists()
 
         # Dockerfileをレンダリング
-        dockerfile_content = render_dockerfile(func, docker_config)
+        dockerfile_content = render_dockerfile(func, docker_config_copy)
 
         if dry_run:
-            print(f"\n📄 [DryRun] Target: {dockerfile_path}")
+            print(f"\n📄 [DryRun] Staging: {dockerfile_dir} (Source: {func_src_dir})")
             print("-" * 60)
             print(dockerfile_content.strip())
             print("-" * 60)
         else:
             if verbose:
-                print(f"Generating: {dockerfile_path}")
-            func_dir.mkdir(parents=True, exist_ok=True)
+                print(f"Staging build files: {dockerfile_dir}")
+            dockerfile_path = dockerfile_dir / "Dockerfile"
             with open(dockerfile_path, "w", encoding="utf-8") as f:
                 f.write(dockerfile_content)
 
-    # functions.yml を生成
-    functions_yml_path = project_root / paths.get("functions_yml", "config/functions.yml")
+    # functions.yml を生成 (base_dir 相対、未指定なら output_dir/config/ 配下)
+    functions_yml_raw = paths.get("functions_yml")
+    if functions_yml_raw:
+        functions_yml_path_raw = Path(functions_yml_raw)
+        if not functions_yml_path_raw.is_absolute():
+            functions_yml_path = (base_dir / functions_yml_path_raw).resolve()
+        else:
+            functions_yml_path = functions_yml_path_raw
+    else:
+        # デフォルト規約: output_dir/config/functions.yml
+        functions_yml_path = output_dir / "config" / "functions.yml"
 
     functions_yml_content = render_functions_yml(functions)
 
@@ -127,8 +234,18 @@ def generate_files(
         with open(functions_yml_path, "w", encoding="utf-8") as f:
             f.write(functions_yml_content)
 
-    # routing.yml を生成
-    routing_yml_path = project_root / paths.get("routing_yml", "config/routing.yml")
+    # routing.yml を生成 (base_dir 相対、未指定なら output_dir/config/ 配下)
+    routing_yml_raw = paths.get("routing_yml")
+    if routing_yml_raw:
+        routing_yml_path_raw = Path(routing_yml_raw)
+        if not routing_yml_path_raw.is_absolute():
+            routing_yml_path = (base_dir / routing_yml_path_raw).resolve()
+        else:
+            routing_yml_path = routing_yml_path_raw
+    else:
+        # デフォルト規約: output_dir/config/routing.yml
+        routing_yml_path = output_dir / "config" / "routing.yml"
+    
     routing_yml_content = render_routing_yml(functions)
 
     if dry_run:
@@ -145,6 +262,8 @@ def generate_files(
 
     if not dry_run:
         print(f"Generated {len(functions)} Dockerfile(s), functions.yml, and routing.yml")
+    
+    return functions
 
 
 def main():
