@@ -3,14 +3,17 @@ from tools.cli.commands.up import run as run_up
 from tools.cli.commands.down import run as run_down
 
 
+@patch("tools.cli.commands.up.wait_for_gateway")
+@patch("tools.cli.commands.up.generate_ssl_certificate")
 @patch("subprocess.check_call")
 @patch("tools.provisioner.main.main")
 @patch("tools.cli.commands.build.run")
-def test_up_command_flow(mock_build_run, mock_provisioner_main, mock_subprocess):
-    """up コマンドが build, docker compose, provisioner を正しく呼び出すか確認"""
+def test_up_command_flow(mock_build_run, mock_provisioner_main, mock_subprocess, mock_ssl, mock_wait):
+    """Ensure up command correctly calls build, docker compose, and provisioner."""
     args = MagicMock()
     args.build = True
     args.detach = True
+    args.wait = False  # Should not wait in this test case
 
     run_up(args)
 

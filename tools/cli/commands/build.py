@@ -7,13 +7,13 @@ from tools.generator import main as generator
 from tools.cli import config as cli_config
 from tools.cli.core import logging
 
-# ESB Lambda ベースイメージ用のディレクトリ
+# Directory for ESB Lambda base image
 RUNTIME_DIR = cli_config.PROJECT_ROOT / "tools" / "generator" / "runtime"
 BASE_IMAGE_TAG = "esb-lambda-base:latest"
 
 
 def build_base_image(no_cache=False):
-    """ESB Lambda ベースイメージをビルドする"""
+    """Build the ESB Lambda base image."""
     client = docker.from_env()
     dockerfile_path = RUNTIME_DIR / "Dockerfile.base"
 
@@ -41,7 +41,7 @@ def build_base_image(no_cache=False):
 
 
 def _extract_function_name_from_dockerfile(dockerfile_path) -> str | None:
-    """Dockerfile から FunctionName を抽出する"""
+    """Extract FunctionName from Dockerfile."""
     try:
         with open(dockerfile_path, "r", encoding="utf-8") as f:
             for line in f:
@@ -54,7 +54,7 @@ def _extract_function_name_from_dockerfile(dockerfile_path) -> str | None:
 
 def build_function_images(functions, template_path, no_cache=False, verbose=False):
     """
-    各関数のイメージをビルドする
+    Build images for each function.
     """
     client = docker.from_env()
     sam_template_path = Path(template_path)
@@ -74,8 +74,8 @@ def build_function_images(functions, template_path, no_cache=False, verbose=Fals
 
         print(f"  • Building {logging.highlight(image_tag)} ...", end="", flush=True)
         try:
-            # ビルドコンテキストは生成されたステージングディレクトリ (context_path)
-            # Dockerfile名は "Dockerfile" 固定
+            # Build context is the generated staging directory (context_path)
+            # Dockerfile name is fixed as "Dockerfile"
             client.images.build(
                 path=str(context_path),
                 dockerfile="Dockerfile",
@@ -102,24 +102,24 @@ def run(args):
     if dry_run:
         logging.info("Running in DRY-RUN mode. No files will be written, no images built.")
 
-    # 1. 設定ファイル生成 (Phase 1 Generator)
+    # 1. Generate configuration files (Phase 1 Generator)
     logging.step("Generating configurations...")
     logging.info(f"Using template: {logging.highlight(cli_config.TEMPLATE_YAML)}")
 
-    # Generator の設定をロード
-    # テンプレートと同じディレクトリにある generator.yml を優先
+    # Load Generator configuration
+    # Prioritize generator.yml located in the same directory as the template
     config_path = cli_config.E2E_DIR / "generator.yml"
-    
+
     if not config_path.exists():
         import questionary
         from tools.cli.commands import init
-        
+
         print(f"ℹ Configuration file not found at: {config_path}")
         if questionary.confirm("Do you want to initialize configuration now?").ask():
-            # Init コマンドを呼び出し (引数は現在の args を流用、ただし template だけ渡す)
+            # Call Init command (Reuse current args, but pass template only)
             init_args = type('Args', (), {'template': str(cli_config.TEMPLATE_YAML)})
             init.run(init_args)
-            # Init完了後、再度ビルドを継続するか確認しても良いが、一旦終了する
+            # Could confirm to continue build after Init, but exit for now
             logging.info("Configuration initialized. Please run build command again.")
             return
         else:
@@ -128,7 +128,7 @@ def run(args):
 
     config = generator.load_config(config_path)
 
-    # テンプレートパスを解決
+    # Resolve template path
     if "paths" not in config:
         config["paths"] = {}
     config["paths"]["sam_template"] = str(cli_config.TEMPLATE_YAML)
@@ -146,7 +146,7 @@ def run(args):
 
     logging.success("Configurations generated.")
 
-    # 2. ベースイメージビルド
+    # 2. Build base image
     no_cache = getattr(args, "no_cache", False)
 
     if not build_base_image(no_cache=no_cache):
@@ -154,7 +154,7 @@ def run(args):
 
         sys.exit(1)
 
-    # 3. Lambda関数イメージビルド
+    # 3. Build Lambda function images
     build_function_images(
         functions=functions,
         template_path=cli_config.TEMPLATE_YAML,

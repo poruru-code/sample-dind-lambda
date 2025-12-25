@@ -68,9 +68,11 @@ Resources:
             # This works even if processing in tmpdir as long as installed package is utilized.
             generate_files(config, project_root=tmpdir)
 
-            # 検証
-            dockerfile = func_dir / "Dockerfile"
-            assert dockerfile.exists(), "Dockerfile should be generated"
+            # Verification
+            # The structure is <output_dir>/functions/<function_name>/Dockerfile
+            # Here, output_dir is "functions" (relative to tmpdir), so the full path is under tmpdir/functions/functions/.
+            generated_dockerfile = tmpdir / "functions" / "functions" / "lambda-hello" / "Dockerfile"
+            assert generated_dockerfile.exists(), f"Dockerfile should be generated at {generated_dockerfile}"
 
             # content = dockerfile.read_text(encoding="utf-8")
             # assert "COPY tools/generator/runtime/sitecustomize.py" in content # Moved to base image
