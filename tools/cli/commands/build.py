@@ -1,10 +1,10 @@
 import docker
 from tools.generator import main as generator
-from tools.cli.config import PROJECT_ROOT, E2E_DIR, TEMPLATE_YAML
+from tools.cli import config as cli_config
 from tools.cli.core import logging
 
 # ESB Lambda ベースイメージ用のディレクトリ
-RUNTIME_DIR = PROJECT_ROOT / "tools" / "generator" / "runtime"
+RUNTIME_DIR = cli_config.PROJECT_ROOT / "tools" / "generator" / "runtime"
 BASE_IMAGE_TAG = "esb-lambda-base:latest"
 
 
@@ -53,7 +53,7 @@ def build_function_images(no_cache=False, verbose=False):
     生成されたDockerfileを見つけてイメージをビルドする
     """
     client = docker.from_env()
-    functions_dir = E2E_DIR / "functions"
+    functions_dir = cli_config.E2E_DIR / "functions"
 
     logging.step("Building function images...")
 
@@ -75,10 +75,10 @@ def build_function_images(no_cache=False, verbose=False):
         try:
             # ビルドコンテキストを PROJECT_ROOT に設定し、
             # Dockerfile の相対パスを PROJECT_ROOT から計算する
-            relative_dockerfile = dockerfile.relative_to(PROJECT_ROOT).as_posix()
+            relative_dockerfile = dockerfile.relative_to(cli_config.PROJECT_ROOT).as_posix()
 
             client.images.build(
-                path=str(PROJECT_ROOT),
+                path=str(cli_config.PROJECT_ROOT),
                 dockerfile=relative_dockerfile,
                 tag=image_tag,
                 nocache=no_cache,
@@ -108,22 +108,25 @@ def run(args):
 
     # 1. 設定ファイル生成 (Phase 1 Generator)
     logging.step("Generating configurations...")
-    logging.info(f"Using template: {logging.highlight(TEMPLATE_YAML)}")
+    logging.info(f"Using template: {logging.highlight(cli_config.TEMPLATE_YAML)}")
 
     # Generator の設定をロード
-    config_path = E2E_DIR / "generator.yml"
+    config_path = cli_config.E2E_DIR / "generator.yml"
     if not config_path.exists():
-        config_path = PROJECT_ROOT / "tests/fixtures/generator.yml"
+        config_path = cli_config.PROJECT_ROOT / "tests/fixtures/generator.yml"
 
     config = generator.load_config(config_path)
 
     # テンプレートパスを解決
     if "paths" not in config:
         config["paths"] = {}
-    config["paths"]["sam_template"] = str(TEMPLATE_YAML)
+    config["paths"]["sam_template"] = str(cli_config.TEMPLATE_YAML)
 
     generator.generate_files(
-        config=config, project_root=PROJECT_ROOT, dry_run=dry_run, verbose=verbose
+        config=config,
+        project_root=cli_config.PROJECT_ROOT,
+        dry_run=dry_run,
+        verbose=verbose,
     )
 
     if dry_run:
