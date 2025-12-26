@@ -47,8 +47,8 @@ class GatewayConfig(BaseAppConfig):
     # 外部連携 (接続先ホスト名は必須 - 環境変数から設定)
     CONTAINERS_NETWORK: str = Field(..., description="Lambdaコンテナの所属ネットワーク")
     GATEWAY_INTERNAL_URL: str = Field(..., description="コンテナから見たGateway URL")
-    MANAGER_URL: str = Field(..., description="ManagerサービスURL")
-    MANAGER_TIMEOUT: float = Field(default=30.0, description="Manager通信タイムアウト(秒)")
+    ORCHESTRATOR_URL: str = Field(..., description="OrchestratorサービスURL")
+    ORCHESTRATOR_TIMEOUT: float = Field(default=30.0, description="Orchestrator通信タイムアウト(秒)")
     LAMBDA_INVOKE_TIMEOUT: float = Field(default=30.0, description="Lambda呼び出しタイムアウト(秒)")
 
     # サーキットブレーカー設定

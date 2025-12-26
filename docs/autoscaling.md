@@ -11,20 +11,20 @@ Edge Serverless Box (ESB) は、Lambda 関数の同時実行リクエストを�
 オートスケーリング機能は主に Gateway サービス内の `PoolManager` によって制御されます。
 
 ```mermaid
-graph TD
-    subgraph Gateway
-        Invoker[Lambda Invoker] --> PM[PoolManager]
-        PM --> CP[ContainerPool]
-        PM --> Janitor[HeartbeatJanitor]
+flowchart TD
+    subgraph Gateway ["Gateway"]
+        Invoker["Lambda Invoker"] --> PM["PoolManager"]
+        PM --> CP["ContainerPool"]
+        PM --> Janitor["HeartbeatJanitor"]
     end
 
-    subgraph Manager
-        Service[Manager Service]
+    subgraph Orchestrator ["Orchestrator"]
+        Service["Orchestrator Service"]
     end
 
-    subgraph Workers
-        C1[Lambda Container 1]
-        C2[Lambda Container 2]
+    subgraph Workers ["Workers"]
+        C1["Lambda Container 1"]
+        C2["Lambda Container 2"]
     end
 
     CP -->|acquire/release| PM
@@ -37,8 +37,8 @@ graph TD
 
 1.  **`PoolManager`**: Gateway のエントリポイント。リクエストごとに `ContainerPool` からワーカーを取得（またはプロビジョニングを要求）し、実行後に返却します。
 2.  **`ContainerPool`**: 特定の関数ごとのコンテナインスタンスを管理します。`asyncio.Semaphore` を使用して同時実行数 (`max_capacity`) を制御します。
-3.  **`HeartbeatJanitor`**: 稼働中の全コンテナのリストを定期的に `Manager` に送信します。これにより、Manager は「現在 Gateway が使用しているコンテナ」を正確に把握し、誤ったクリーンアップを防ぎます。
-4.  **`Manager Service`**: コンテナの実体（Dockerコンテナ）の起動・停止を担当します。Gateway から届くハートビートに基づき、長期間未使用のコンテナを安全に削除します。
+3.  **`HeartbeatJanitor`**: 稼働中の全コンテナのリストを定期的に `Orchestrator` に送信します。これにより、Orchestrator は「現在 Gateway が使用しているコンテナ」を正確に把握し、誤ったクリーンアップを防ぎます。
+4.  **`Orchestrator Service`**: コンテナの実体（Dockerコンテナ）の起動・停止を担当します。Gateway から届くハートビートに基づき、長期間未使用のコンテナを安全に削除します。
 
 ## 設定
 
@@ -65,7 +65,7 @@ MyFunction:
 | 変数名                     | 説明                                                | デフォルト値 |
 | -------------------------- | --------------------------------------------------- | ------------ |
 | `ENABLE_CONTAINER_POOLING` | オートスケーリング機能（コンテナプール）の有効/無効 | `False`      |
-| `HEARTBEAT_INTERVAL`       | Manager へのハートビート送信間隔（秒）              | `30`         |
+| `HEARTBEAT_INTERVAL`       | Orchestrator へのハートビート送信間隔（秒）              | `30`         |
 | `POOL_ACQUIRE_TIMEOUT`     | 全ワーカーが使用中の場合の待機タイムアウト（秒）    | `5.0`        |
 
 ## 動作原理
@@ -82,7 +82,7 @@ MyFunction:
 Lambda の実行が完了（成功・失敗・タイムアウト問わず）すると、コンテナはプールに返却 (`release`) され、待機中の次のリクエストが利用可能になります。
 
 ### 3. Scale to Zero (スケールダウン)
-リクエストが一定時間（Manager 側の `idle_timeout`：デフォルト 5分）途絶えたコンテナは、Manager によって自動的に停止・削除されます。
+リクエストが一定時間（Orchestrator 側の `idle_timeout`：デフォルト 5分）途絶えたコンテナは、Orchestrator によって自動的に停止・削除されます。
 
 *   **メリット**: 未使用のリソースを完全に解放し、エッジ環境の限られた CPU/メモリを節約します。
 *   **注意点**: 0 個の状態から最初のリクエストが届いた際は、コンテナの起動待ち（Cold Start）が発生し、レスポンス時間が数秒増加します。
@@ -90,9 +90,9 @@ Lambda の実行が完了（成功・失敗・タイムアウト問わず）す�
 ### 4. セルフヒーリングとクリーンアップ
 コンテナがクラッシュしたり、通信エラーが発生した場合、`evict` メソッドによってプールから除外されます。この際もセマフォは解放されるため、システム全体のデッドロックを防ぎつつ、次のリクエストで新しいコンテナが作成されます。
 
-長期間リクエストがないコンテナは、Manager 側の Janitor ロジックによって自動的に停止・削除されます。
+長期間リクエストがないコンテナは、Orchestrator 側の Janitor ロジックによって自動的に停止・削除されます。
 
 ## 注意事項
 
 *   **Cold Start**: 新規プロビジョニング時は Docker コンテナの起動時間がかかるため、レイテンシが増加します（コールドスタート）。
-*   **Docker Socket**: Manager が Docker API を操作するため、DinD 環境では適切な Docker Socket のマウントが必要です。
+*   **Docker Socket**: Orchestrator が Docker API を操作するため、DinD 環境では適切な Docker Socket のマウントが必要です。

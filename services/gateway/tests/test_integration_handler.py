@@ -8,7 +8,7 @@ from services.gateway.api.deps import (
     verify_authorization,
     resolve_lambda_target,
     get_lambda_invoker,
-    get_manager_client,
+    get_orchestrator_client,
 )
 from services.gateway.models import TargetFunction
 
@@ -30,7 +30,7 @@ def mock_invoker():
 @pytest.fixture
 def mock_ensure_container():
     # Mock the CLASS so when main.py instantiates it, it gets a mock
-    # Wait, we inject ManagerClient via DI, so we should override get_manager_client in tests,
+    # Wait, we inject ManagerClient via DI, so we should override get_orchestrator_client in tests,
     # OR rely on app.state.manager_client being mocked?
     # In test_error_logging we override dependency. Here let's override too.
     # But this fixture was using patch on main.py imports.
@@ -51,7 +51,7 @@ def test_gateway_handler_propagates_trace_id(mock_invoker):
 
     # Mock manager client just in case (though unused if invoker is mocked)
     mock_manager = AsyncMock()
-    app.dependency_overrides[get_manager_client] = lambda: mock_manager
+    app.dependency_overrides[get_orchestrator_client] = lambda: mock_manager
 
     trace_id = "Root=1-integration-999-abcdef0123456789abcdef01;Sampled=1"
     headers = {"X-Amzn-Trace-Id": trace_id}

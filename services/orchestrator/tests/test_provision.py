@@ -14,7 +14,7 @@ class TestProvisionEndpoint:
 
     @pytest.fixture
     def mock_manager(self):
-        """Mock ContainerManager with provision_containers method"""
+        """Mock ContainerOrchestrator with provision_containers method"""
         from services.common.models.internal import WorkerInfo
 
         manager = MagicMock()
@@ -33,10 +33,10 @@ class TestProvisionEndpoint:
     @pytest.mark.asyncio
     async def test_provision_single_container(self, mock_manager):
         """POST /containers/provision should return provisioned worker"""
-        from services.manager.main import app
+        from services.orchestrator.main import app
 
         transport = ASGITransport(app=app)  # type: ignore
-        with patch("services.manager.main.manager", mock_manager):
+        with patch("services.orchestrator.main.orchestrator", mock_manager):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 response = await client.post(
                     "/containers/provision",
@@ -54,7 +54,7 @@ class TestProvisionEndpoint:
     async def test_provision_multiple_containers(self, mock_manager):
         """POST /containers/provision should support count parameter"""
         from services.common.models.internal import WorkerInfo
-        from services.manager.main import app
+        from services.orchestrator.main import app
 
         mock_manager.provision_containers = AsyncMock(
             return_value=[
@@ -64,7 +64,7 @@ class TestProvisionEndpoint:
         )
 
         transport = ASGITransport(app=app)  # type: ignore
-        with patch("services.manager.main.manager", mock_manager):
+        with patch("services.orchestrator.main.orchestrator", mock_manager):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 response = await client.post(
                     "/containers/provision",
@@ -80,10 +80,10 @@ class TestProvisionEndpoint:
     @pytest.mark.asyncio
     async def test_provision_with_custom_image(self, mock_manager):
         """POST /containers/provision should pass custom image"""
-        from services.manager.main import app
+        from services.orchestrator.main import app
 
         transport = ASGITransport(app=app)  # type: ignore
-        with patch("services.manager.main.manager", mock_manager):
+        with patch("services.orchestrator.main.orchestrator", mock_manager):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 response = await client.post(
                     "/containers/provision",
@@ -103,14 +103,14 @@ class TestProvisionEndpoint:
     async def test_provision_image_not_found(self, mock_manager):
         """POST /containers/provision should return 404 for missing image"""
         import docker.errors
-        from services.manager.main import app
+        from services.orchestrator.main import app
 
         mock_manager.provision_containers = AsyncMock(
             side_effect=docker.errors.ImageNotFound("Image not found")
         )
 
         transport = ASGITransport(app=app)  # type: ignore
-        with patch("services.manager.main.manager", mock_manager):
+        with patch("services.orchestrator.main.orchestrator", mock_manager):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 response = await client.post(
                     "/containers/provision",
@@ -125,7 +125,7 @@ class TestHeartbeatEndpoint:
 
     @pytest.fixture
     def mock_manager(self):
-        """Mock ContainerManager with update_heartbeat method"""
+        """Mock ContainerOrchestrator with update_heartbeat method"""
         manager = MagicMock()
         manager.update_heartbeat = AsyncMock()
         return manager
@@ -133,10 +133,10 @@ class TestHeartbeatEndpoint:
     @pytest.mark.asyncio
     async def test_heartbeat_success(self, mock_manager):
         """POST /containers/heartbeat should return 200 OK"""
-        from services.manager.main import app
+        from services.orchestrator.main import app
 
         transport = ASGITransport(app=app)  # type: ignore
-        with patch("services.manager.main.manager", mock_manager):
+        with patch("services.orchestrator.main.orchestrator", mock_manager):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 response = await client.post(
                     "/containers/heartbeat",
@@ -155,10 +155,10 @@ class TestHeartbeatEndpoint:
     @pytest.mark.asyncio
     async def test_heartbeat_empty_names(self, mock_manager):
         """POST /containers/heartbeat should accept empty container_names"""
-        from services.manager.main import app
+        from services.orchestrator.main import app
 
         transport = ASGITransport(app=app)  # type: ignore
-        with patch("services.manager.main.manager", mock_manager):
+        with patch("services.orchestrator.main.orchestrator", mock_manager):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 response = await client.post(
                     "/containers/heartbeat",

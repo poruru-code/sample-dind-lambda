@@ -11,11 +11,11 @@ def test_gateway_config_inheritance():
 
 def test_gateway_config_fields():
     """
-    TDD: GatewayConfig should have MANAGER_URL and MANAGER_TIMEOUT.
+    TDD: GatewayConfig should have ORCHESTRATOR_URL and ORCHESTRATOR_TIMEOUT.
     """
     config = GatewayConfig()
-    assert hasattr(config, "MANAGER_URL")
-    assert hasattr(config, "MANAGER_TIMEOUT")
+    assert hasattr(config, "ORCHESTRATOR_URL")
+    assert hasattr(config, "ORCHESTRATOR_TIMEOUT")
     # Verify default values (optional, but good for regression)
-    assert config.MANAGER_URL == "http://test-manager:8081"
-    assert config.MANAGER_TIMEOUT == 30.0
+    assert config.ORCHESTRATOR_URL == "http://test-manager:8081"
+    assert config.ORCHESTRATOR_TIMEOUT == 30.0

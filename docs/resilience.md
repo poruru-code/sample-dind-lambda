@@ -56,14 +56,14 @@ Lambda RIE コンテナは **Manager Service** によって動的に管理され
 
 ---
 
-## 3. Manager Restart Resilience
+## 3. Orchestrator Restart Resilience
 
-Manager サービス自体が再起動した場合でも、実行中の Lambda コンテナを見失わないように設計されています。
+Orchestrator サービス自体が再起動した場合でも、実行中の Lambda コンテナを見失わないように設計されています。
 
-- **Adopt & Sync**: Manager 起動時に Docker 上の既存コンテナをスキャンし、ESB 管理下のコンテナ（`created_by=edge-serverless-box`）を自身の管理テーブルに復元します。
-これにより、Manager のアップデートや再起動中も Lambda コンテナは稼働し続け、サービス断を最小限に抑えます。
+- **Adopt & Sync**: Orchestrator 起動時に Docker 上の既存コンテナをスキャンし、ESB 管理下のコンテナ（`created_by=esb`）を自身の管理テーブルに復元します。
+これにより、Orchestrator のアップデートや再起動中も Lambda コンテナは稼働し続け、サービス断を最小限に抑えます。
 
-詳細は [manager-restart-resilience.md](./manager-restart-resilience.md) を参照してください。
+詳細は [orchestrator-restart-resilience.md](./orchestrator-restart-resilience.md) を参照してください。
 
 ---
 

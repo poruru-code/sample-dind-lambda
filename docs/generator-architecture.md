@@ -9,13 +9,13 @@
 ## アーキテクチャ構成
 
 ```mermaid
-graph TD
-    User[Developer] -->|"esb init"| CLI[CLI Wrapper]
+flowchart TD
+    User["Developer"] -->|"esb init"| CLI["CLI Wrapper"]
     User -->|"esb build"| CLI
     
-    CLI --> Generator[Generator Core]
+    CLI --> Generator["Generator Core"]
     
-    subgraph Generator Core
+    subgraph GeneratorCore ["Generator Core"]
         Parser["Parser (Phase 1)"]
         Renderer["Renderer (Phase 2)"]
     end

@@ -1,13 +1,13 @@
 import pytest
 from unittest.mock import MagicMock, AsyncMock, Mock, patch
 import docker.errors
-from services.manager.service import ContainerManager
+from services.orchestrator.service import ContainerOrchestrator
 
 
 @pytest.fixture
 def mock_docker_adaptor():
     # Patch the class in the service module
-    with patch("services.manager.service.DockerAdaptor") as mock_cls:
+    with patch("services.orchestrator.service.DockerAdaptor") as mock_cls:
         adaptor = Mock()  # The instance
         mock_cls.return_value = adaptor
         yield adaptor
@@ -21,7 +21,7 @@ async def test_ensure_container_running_cold_start(mock_docker_adaptor):
     mock_docker_adaptor.reload_container = AsyncMock()
     mock_docker_adaptor.remove_container = AsyncMock()
 
-    manager = ContainerManager(network="test-net")
+    manager = ContainerOrchestrator(network="test-net")
 
     # Mock get_container to raise NotFound
     mock_docker_adaptor.get_container.side_effect = docker.errors.NotFound("Not found")
@@ -46,7 +46,7 @@ async def test_ensure_container_running_warm_start(mock_docker_adaptor):
     mock_docker_adaptor.run_container = AsyncMock()
     mock_docker_adaptor.reload_container = AsyncMock()
 
-    manager = ContainerManager(network="test-net")
+    manager = ContainerOrchestrator(network="test-net")
 
     mock_container = MagicMock()
     mock_container.status = "running"
@@ -67,10 +67,10 @@ async def test_ensure_container_running_warm_start(mock_docker_adaptor):
 @pytest.mark.asyncio
 async def test_wait_for_readiness_post_success():
     """TDD: _wait_for_readiness が POST /invocations を使用してRIE起動を確認"""
-    with patch("services.manager.service.DockerAdaptor"):
-        manager = ContainerManager(network="test-net")
+    with patch("services.orchestrator.service.DockerAdaptor"):
+        manager = ContainerOrchestrator(network="test-net")
 
-    with patch("services.manager.service.httpx.AsyncClient") as mock_client_cls:
+    with patch("services.orchestrator.service.httpx.AsyncClient") as mock_client_cls:
         mock_client = AsyncMock()
         mock_client_cls.return_value.__aenter__.return_value = mock_client
 
@@ -91,10 +91,10 @@ async def test_wait_for_readiness_post_success():
 @pytest.mark.asyncio
 async def test_wait_for_readiness_post_retry_then_success():
     """TDD: POST失敗時にリトライし、最終的に成功"""
-    with patch("services.manager.service.DockerAdaptor"):
-        manager = ContainerManager(network="test-net")
+    with patch("services.orchestrator.service.DockerAdaptor"):
+        manager = ContainerOrchestrator(network="test-net")
 
-    with patch("services.manager.service.httpx.AsyncClient") as mock_client_cls:
+    with patch("services.orchestrator.service.httpx.AsyncClient") as mock_client_cls:
         mock_client = AsyncMock()
         mock_client_cls.return_value.__aenter__.return_value = mock_client
 
@@ -109,7 +109,7 @@ async def test_wait_for_readiness_post_retry_then_success():
             mock_response,
         ]
 
-        with patch("services.manager.service.asyncio.sleep", new_callable=AsyncMock):
+        with patch("services.orchestrator.service.asyncio.sleep", new_callable=AsyncMock):
             await manager._wait_for_readiness("1.2.3.4", timeout=30)
 
         # 3回呼ばれたことを確認
@@ -122,7 +122,7 @@ async def test_sync_with_docker_adopts_running_containers(mock_docker_adaptor):
     mock_docker_adaptor.list_containers = AsyncMock()
     mock_docker_adaptor.remove_container = AsyncMock()
 
-    manager = ContainerManager(network="test-net")
+    manager = ContainerOrchestrator(network="test-net")
 
     # 実行中コンテナをモック
     mock_container1 = MagicMock()
@@ -150,7 +150,7 @@ async def test_sync_with_docker_removes_exited_containers(mock_docker_adaptor):
     mock_docker_adaptor.list_containers = AsyncMock()
     mock_docker_adaptor.remove_container = AsyncMock()
 
-    manager = ContainerManager(network="test-net")
+    manager = ContainerOrchestrator(network="test-net")
 
     # 停止中コンテナをモック
     mock_container1 = MagicMock()
@@ -173,7 +173,7 @@ async def test_sync_with_docker_handles_mixed_containers(mock_docker_adaptor):
     mock_docker_adaptor.list_containers = AsyncMock()
     mock_docker_adaptor.remove_container = AsyncMock()
 
-    manager = ContainerManager(network="test-net")
+    manager = ContainerOrchestrator(network="test-net")
 
     # 混在状態をモック
     running = MagicMock()
@@ -208,7 +208,7 @@ async def test_ensure_container_running_handles_409_conflict(mock_docker_adaptor
     mock_docker_adaptor.run_container = AsyncMock()
     mock_docker_adaptor.reload_container = AsyncMock()
 
-    manager = ContainerManager(network="test-net")
+    manager = ContainerOrchestrator(network="test-net")
 
     # 最初のget_containerはNotFound
     mock_docker_adaptor.get_container.side_effect = [

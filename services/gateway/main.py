@@ -19,7 +19,7 @@ from .config import config
 from .core.security import create_access_token
 from .core.utils import parse_lambda_response
 from .models import AuthRequest, AuthResponse, AuthenticationResult
-from .client import ManagerClient
+from .client import OrchestratorClient
 from .services.container_manager import HttpContainerManager
 from .core.event_builder import V1ProxyEventBuilder
 
@@ -33,7 +33,7 @@ from .api.deps import (
     LambdaTargetDep,
     LambdaInvokerDep,
     FunctionRegistryDep,
-    ManagerClientDep,
+    OrchestratorClientDep,
     EventBuilderDep,
 )
 from .core.logging_config import setup_logging
@@ -108,7 +108,7 @@ async def lifespan(app: FastAPI):
                         "image": image,
                         "env": env,
                     },
-                    timeout=config.MANAGER_TIMEOUT,
+                    timeout=config.ORCHESTRATOR_TIMEOUT,
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -140,7 +140,7 @@ async def lifespan(app: FastAPI):
                 }
             }
 
-        provision_client = ProvisionClient(client, config.MANAGER_URL)
+        provision_client = ProvisionClient(client, config.ORCHESTRATOR_URL)
         pool_manager = PoolManager(
             provision_client=provision_client,
             config_loader=config_loader,
@@ -161,7 +161,7 @@ async def lifespan(app: FastAPI):
                     timeout=10.0,
                 )
 
-        heartbeat_client = HeartbeatClient(client, config.MANAGER_URL)
+        heartbeat_client = HeartbeatClient(client, config.ORCHESTRATOR_URL)
         janitor = HeartbeatJanitor(
             pool_manager=pool_manager,
             manager_client=heartbeat_client,
@@ -179,14 +179,14 @@ async def lifespan(app: FastAPI):
         config=config,
         pool_manager=pool_manager,  # None if feature flag disabled
     )
-    manager_client = ManagerClient(client)
+    orchestrator_client = OrchestratorClient(client)
 
     # Store in app.state for DI
     app.state.http_client = client
     app.state.function_registry = function_registry
     app.state.route_matcher = route_matcher
     app.state.lambda_invoker = lambda_invoker
-    app.state.manager_client = manager_client
+    app.state.orchestrator_client = orchestrator_client
     app.state.container_manager = container_manager
     app.state.event_builder = V1ProxyEventBuilder()
     app.state.pool_manager = pool_manager  # May be None
@@ -393,7 +393,7 @@ async def gateway_handler(
     path: str,
     user_id: UserIdDep,
     target: LambdaTargetDep,
-    manager_client: ManagerClientDep,
+    orchestrator_client: OrchestratorClientDep,
     event_builder: EventBuilderDep,
     invoker: LambdaInvokerDep,
 ):
@@ -431,7 +431,7 @@ async def gateway_handler(
 
     except httpx.RequestError as e:
         # Lambda 接続失敗時はキャッシュを無効化
-        # 次回リクエストで Manager に再問い合わせし、コンテナを再起動
+        # 次回リクエストで Orchestrator に再問い合わせし、コンテナを再起動
         logger.error(
             f"Lambda connection failed for {target.container_name}",
             extra={
@@ -444,7 +444,7 @@ async def gateway_handler(
             exc_info=True,
         )
         # LambdaInvoker might have already logged, but we keep this for gateway context
-        manager_client.invalidate_cache(target.container_name)
+        orchestrator_client.invalidate_cache(target.container_name)
         return JSONResponse(status_code=502, content={"message": "Bad Gateway"})
     except ContainerStartError as e:
         return JSONResponse(status_code=503, content={"message": str(e)})

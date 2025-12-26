@@ -3,7 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 import asyncio
 
-from .service import ContainerManager
+from .service import ContainerOrchestrator
 import docker.errors
 from services.common.core.request_context import (
     set_trace_id,
@@ -21,18 +21,18 @@ from services.common.models.internal import (
 
 # Logger setup
 setup_logging()
-logger = logging.getLogger("manager.main")
+logger = logging.getLogger("orchestrator.main")
 
-manager = ContainerManager()
+orchestrator = ContainerOrchestrator()
 # レベル設定などはYAML側で行う
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup Logic: Initialize HTTP client and Sync with Docker
-    await manager.startup()
+    await orchestrator.startup()
     try:
-        await manager.sync_with_docker()
+        await orchestrator.sync_with_docker()
     except Exception as e:
         logger.error(f"Failed to sync containers on startup: {e}", exc_info=True)
 
@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
 
     scheduler = AsyncIOScheduler()
     scheduler.add_job(
-        manager.stop_idle_containers,
+        orchestrator.stop_idle_containers,
         "interval",
         minutes=1,
         id="idle_cleanup",
@@ -52,7 +52,7 @@ async def lifespan(app: FastAPI):
 
     yield
     # Shutdown logic
-    await manager.shutdown()
+    await orchestrator.shutdown()
     scheduler.shutdown()
 
 
@@ -108,7 +108,7 @@ async def ensure_container(req: ContainerEnsureRequest, request: Request):
     """
 
     try:
-        host = await manager.ensure_container_running(req.function_name, req.image, req.env)
+        host = await orchestrator.ensure_container_running(req.function_name, req.image, req.env)
         return ContainerInfoResponse(host=host, port=config.LAMBDA_PORT)
     except docker.errors.ImageNotFound as e:
         logger.error(f"Image not found: {e.explanation}")
@@ -141,7 +141,7 @@ async def provision_containers(req: ContainerProvisionRequest):
     - 409: 名前衝突
     """
     try:
-        workers = await manager.provision_containers(
+        workers = await orchestrator.provision_containers(
             function_name=req.function_name,
             count=req.count,
             image=req.image,
@@ -162,5 +162,5 @@ async def provision_containers(req: ContainerProvisionRequest):
 @app.post("/containers/heartbeat")
 async def heartbeat(req: HeartbeatRequest):
     """ Gateway からの Heartbeat 受信 """
-    await manager.update_heartbeat(req.function_name, req.container_names)
+    await orchestrator.update_heartbeat(req.function_name, req.container_names)
     return {"status": "ok"}

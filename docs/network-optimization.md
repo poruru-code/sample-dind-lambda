@@ -8,12 +8,12 @@ Docker コンテナ間の通信において、本プロジェクトは「Lambda 
 ## 解決策: ハイブリッドアプローチ
 
 ### 1. 内部的な起動確認（Readiness Check）: **IP アドレスを使用**
-`ContainerManager` 内部での疎通確認には、Docker API から取得した IP アドレスを直接使用します。
+`ContainerOrchestrator` 内部での疎通確認には、Docker API から取得した IP アドレスを直接使用します。
 - **理由**: Docker DNS の伝播（数ミリ秒〜数秒）を待たずに、コンテナがネットワーク的に疎通可能になった瞬間を最速で検知するため。
 - **効果**: 開発者が体感する Cold Start の待ち時間を理論上の最速値まで短縮します。
 
 ### 2. Gateway への返却・通信: **コンテナ名（ホスト名）を使用**
-`ContainerManager` が `Gateway` に返す接続先情報は、コンテナ名（ホスト名）です。
+`ContainerOrchestrator` が `Gateway` に返す接続先情報は、コンテナ名（ホスト名）です。
 - **理由**: Gateway が特定の IP アドレスに依存するのを避け、Docker 標準の DNS 名前解決を利用することでシステムの疎結合性と保守性を確保するため。
 - **メリット**: ネットワーク構成の変更に強く、ログの判読性（IP ではなく `lambda-hello` と表示される）も向上します。
 

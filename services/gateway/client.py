@@ -4,9 +4,9 @@ import httpx
 import logging
 from .core.exceptions import (
     FunctionNotFoundError,
-    ManagerError,
-    ManagerTimeoutError,
-    ManagerUnreachableError,
+    OrchestratorError,
+    OrchestratorTimeoutError,
+    OrchestratorUnreachableError,
 )
 from .services.container_cache import ContainerHostCache
 from services.common.core.request_context import get_trace_id
@@ -16,7 +16,7 @@ from .config import config
 logger = logging.getLogger("gateway.client")
 
 
-class ManagerClient:
+class OrchestratorClient:
     def __init__(self, http_client: httpx.AsyncClient, cache: Optional[ContainerHostCache] = None):
         self.client = http_client
         self.cache = cache or ContainerHostCache()
@@ -28,7 +28,7 @@ class ManagerClient:
         Invalidate cache for a specific function.
 
         Call this when Lambda connection fails to ensure next request
-        re-fetches container info from Manager.
+        re-fetches container info from Orchestrator.
         """
         self.cache.invalidate(function_name)
         logger.debug(f"Cache invalidated for {function_name}")
@@ -37,15 +37,15 @@ class ManagerClient:
         self, function_name: str, image: Optional[str] = None, env: Optional[Dict[str, str]] = None
     ) -> str:
         """
-        Calls Manager Service to ensure container is running and get its host/IP.
+        Calls Orchestrator Service to ensure container is running and get its host/IP.
 
-        Uses TTL-based cache and Singleflight pattern to avoid redundant Manager calls.
+        Uses TTL-based cache and Singleflight pattern to avoid redundant Orchestrator calls.
 
         Raises:
             FunctionNotFoundError: 関数/イメージが存在しない (404)
-            ManagerError: Docker API エラーなど (400, 409など)
-            ManagerTimeoutError: タイムアウト (408)
-            ManagerUnreachableError: Manager への接続失敗
+            OrchestratorError: Docker API エラーなど (400, 409など)
+            OrchestratorTimeoutError: タイムアウト (408)
+            OrchestratorUnreachableError: Orchestrator への接続失敗
         """
         # 1. キャッシュチェック
         cached_host = self.cache.get(function_name)
@@ -86,8 +86,8 @@ class ManagerClient:
     async def _fetch_from_manager(
         self, function_name: str, image: Optional[str], env: Optional[Dict[str, str]]
     ) -> str:
-        """Manager に問い合わせてホストを取得"""
-        url = f"{config.MANAGER_URL}/containers/ensure"
+        """Orchestrator に問い合わせてホストを取得"""
+        url = f"{config.ORCHESTRATOR_URL}/containers/ensure"
 
         # モデルを作成
         request_model = ContainerEnsureRequest(
@@ -105,39 +105,39 @@ class ManagerClient:
                 url,
                 json=request_model.model_dump(),
                 headers=headers,
-                timeout=config.MANAGER_TIMEOUT,
+                timeout=config.ORCHESTRATOR_TIMEOUT,
             )
             resp.raise_for_status()
 
             # レスポンスをモデルでバリデーション
             response_model = ContainerInfoResponse.model_validate(resp.json())
 
-            logger.debug(f"Fetched from Manager: {function_name} -> {response_model.host}")
+            logger.debug(f"Fetched from Orchestrator: {function_name} -> {response_model.host}")
             return response_model.host
 
         except httpx.TimeoutException as e:
-            logger.error(f"Manager request timed out: {e}")
-            raise ManagerTimeoutError(f"Container startup timeout for {function_name}") from e
+            logger.error(f"Orchestrator request timed out: {e}")
+            raise OrchestratorTimeoutError(f"Container startup timeout for {function_name}") from e
 
         except httpx.RequestError as e:
             # 接続失敗 (ネットワークエラー、DNS解決失敗など)
-            logger.error(f"Failed to connect to Manager: {e}")
-            raise ManagerUnreachableError(e) from e
+            logger.error(f"Failed to connect to Orchestrator: {e}")
+            raise OrchestratorUnreachableError(e) from e
 
         except httpx.HTTPStatusError as e:
             # Manager からの HTTP エラーレスポンス
             status = e.response.status_code
             detail = e.response.text
 
-            logger.error(f"Manager returned {status}: {detail}")
+            logger.error(f"Orchestrator returned {status}: {detail}")
 
             # エラーコードマッピング
             if status == 404:
                 raise FunctionNotFoundError(function_name) from e
             elif status in [400, 408, 409]:
-                raise ManagerError(status, detail) from e
+                raise OrchestratorError(status, detail) from e
             else:
-                raise ManagerError(status, detail) from e
+                raise OrchestratorError(status, detail) from e
 
 
 # Backward compatibility (optional, or just remove)
@@ -145,10 +145,10 @@ async def get_lambda_host(
     function_name: str, image: Optional[str] = None, env: Optional[Dict[str, str]] = None
 ) -> str:
     """
-    Deprecated: Use ManagerClient instead.
+    Deprecated: Use OrchestratorClient instead.
     Temporarily kept for un-refactored code in main.py if any.
     But we will refactor main.py to use ManagerClient.
     """
     async with httpx.AsyncClient() as client:
-        manager = ManagerClient(client)
-        return await manager.ensure_container(function_name, image, env)
+        orchestrator = OrchestratorClient(client)
+        return await orchestrator.ensure_container(function_name, image, env)

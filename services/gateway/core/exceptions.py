@@ -46,28 +46,28 @@ class LambdaExecutionError(LambdaInvokeError):
         super().__init__(f"Lambda execution failed for {function_name}: {cause}")
 
 
-class ManagerError(LambdaInvokeError):
-    """Manager サービスからのエラー"""
+class OrchestratorError(LambdaInvokeError):
+    """Orchestrator サービスからのエラー"""
 
     def __init__(self, status_code: int, detail: str):
         self.status_code = status_code
         self.detail = detail
-        super().__init__(f"Manager error ({status_code}): {detail}")
+        super().__init__(f"Orchestrator error ({status_code}): {detail}")
 
 
-class ManagerTimeoutError(ManagerError):
-    """Manager サービスのタイムアウトエラー"""
+class OrchestratorTimeoutError(OrchestratorError):
+    """Orchestrator サービスのタイムアウトエラー"""
 
-    def __init__(self, detail: str = "Manager request timed out"):
+    def __init__(self, detail: str = "Orchestrator request timed out"):
         super().__init__(408, detail)
 
 
-class ManagerUnreachableError(LambdaInvokeError):
-    """Manager サービスへの接続失敗"""
+class OrchestratorUnreachableError(LambdaInvokeError):
+    """Orchestrator サービスへの接続失敗"""
 
     def __init__(self, cause: Exception):
         self.cause = cause
-        super().__init__(f"Manager unreachable: {cause}")
+        super().__init__(f"Orchestrator unreachable: {cause}")
 
 
 # ===========================================

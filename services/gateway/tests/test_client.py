@@ -8,7 +8,7 @@ ManagerClient のテスト (TDD Red フェーズ)
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 import httpx
-from services.gateway.client import ManagerClient
+from services.gateway.client import OrchestratorClient as ManagerClient
 
 
 @pytest.fixture
@@ -36,27 +36,27 @@ async def test_ensure_container_success(mock_client):
 
 @pytest.mark.asyncio
 async def test_ensure_container_network_failure(mock_client):
-    """Manager への接続失敗 -> ManagerUnreachableError"""
-    from services.gateway.core.exceptions import ManagerUnreachableError
+    """Manager への接続失敗 -> OrchestratorUnreachableError"""
+    from services.gateway.core.exceptions import OrchestratorUnreachableError
 
     mock_client.post.side_effect = httpx.RequestError("Connection failed", request=MagicMock())
 
     manager_client = ManagerClient(mock_client)
 
-    with pytest.raises(ManagerUnreachableError):
+    with pytest.raises(OrchestratorUnreachableError):
         await manager_client.ensure_container("test-func")
 
 
 @pytest.mark.asyncio
 async def test_ensure_container_timeout(mock_client):
-    """Manager タイムアウト -> ManagerTimeoutError"""
-    from services.gateway.core.exceptions import ManagerTimeoutError
+    """Manager タイムアウト -> OrchestratorTimeoutError"""
+    from services.gateway.core.exceptions import OrchestratorTimeoutError
 
     mock_client.post.side_effect = httpx.TimeoutException("Timeout", request=MagicMock())
 
     manager_client = ManagerClient(mock_client)
 
-    with pytest.raises(ManagerTimeoutError):
+    with pytest.raises(OrchestratorTimeoutError):
         await manager_client.ensure_container("test-func")
 
 
@@ -82,8 +82,8 @@ async def test_ensure_container_404_function_not_found(mock_client):
 
 @pytest.mark.asyncio
 async def test_ensure_container_400_docker_error(mock_client):
-    """Manager 400 -> ManagerError"""
-    from services.gateway.core.exceptions import ManagerError
+    """Manager 400 -> OrchestratorError"""
+    from services.gateway.core.exceptions import OrchestratorError
 
     mock_response = MagicMock(spec=httpx.Response)
     mock_response.status_code = 400
@@ -96,7 +96,7 @@ async def test_ensure_container_400_docker_error(mock_client):
 
     manager_client = ManagerClient(mock_client)
 
-    with pytest.raises(ManagerError) as exc_info:
+    with pytest.raises(OrchestratorError) as exc_info:
         await manager_client.ensure_container("test-func")
 
     assert exc_info.value.status_code == 400
@@ -268,7 +268,7 @@ async def test_singleflight_propagates_error_to_all_waiters(mock_client):
     """エラー時は全待機者にエラーが伝播される"""
     import asyncio
     from services.gateway.services.container_cache import ContainerHostCache
-    from services.gateway.core.exceptions import ManagerUnreachableError
+    from services.gateway.core.exceptions import OrchestratorUnreachableError
 
     cache = ContainerHostCache()
 
@@ -291,4 +291,4 @@ async def test_singleflight_propagates_error_to_all_waiters(mock_client):
     # 全員が同じエラーを受け取る
     assert len(results) == 3
     for err in results:
-        assert isinstance(err, ManagerUnreachableError)
+        assert isinstance(err, OrchestratorUnreachableError)

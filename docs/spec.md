@@ -8,20 +8,20 @@
 システムは以下の主要コンポーネントで構成されます。
 
 ```mermaid
-graph TD
-    User[Client / Developer]
+flowchart TD
+    User["Client / Developer"]
     
-    subgraph Host["Host OS / DinD Parent Container"]
+    subgraph Host ["Host OS / DinD Parent Container"]
         Gateway["Gateway API<br>(:443)"]
-        Manager["Manager API<br>(Internal)"]
+        Orchestrator["Orchestrator API<br>(Internal)"]
         RustFS["RustFS S3<br>(:9000)"]
         Console["RustFS Console<br>(:9001)"]
         DB["ScyllaDB<br>(:8001)"]
         Logs["VictoriaLogs<br>(:9428)"]
         
-        Gateway -->|Pool Management| PoolManager[PoolManager]
-        PoolManager -->|Capacity Control| ContainerPool[ContainerPool]
-        PoolManager -->|Status Sync| HeartbeatJanitor[HeartbeatJanitor]
+        Gateway -->|Pool Management| PoolOrchestrator[PoolOrchestrator]
+        PoolOrchestrator -->|Capacity Control| ContainerPool[ContainerPool]
+        PoolOrchestrator -->|Status Sync| HeartbeatJanitor[HeartbeatJanitor]
         
         Lambda["Lambda Function<br>(Ephemeral Containers)"]
     end
@@ -32,13 +32,13 @@ graph TD
     User -->|Dynamo API| DB
     User -->|Web UI| Logs
     
-    Gateway -->|HTTP| Manager
-    HeartbeatJanitor -->|Heartbeat| Manager
+    Gateway -->|HTTP| Orchestrator
+    HeartbeatJanitor -->|Heartbeat| Orchestrator
     Gateway -->|AWS SDK| RustFS
     Gateway -->|AWS SDK| DB
     Gateway -->|HTTP| Lambda
     
-    Manager -->|Docker API| Lambda
+    Orchestrator -->|Docker API| Lambda
     
     Lambda -->|AWS SDK| RustFS
     Lambda -->|AWS SDK| DB
@@ -47,7 +47,7 @@ graph TD
 
 ### 2.1 Gateway API (FastAPI)
 - **役割**: クライアントからのリクエスト受付、認証、およびLambda関数へのリクエストルーティング。
-- **通信**: クライアントとはHTTPで通信。内部でManagerサービスと連携してLambdaの起動を確認し、リクエストを転送。
+- **通信**: クライアントとはHTTPで通信。内部でOrchestratorサービスと連携してLambdaの起動を確認し、リクエストを転送。
 - **ポート**: `443`
 
 #### ディレクトリ構成
@@ -62,21 +62,21 @@ gateway/app/
 │   └── auth.py          # 認証関連スキーマ
 └── services/            # ビジネスロジック
     ├── container_pool.py  # セマフォベースの同時実行制御とプーリング
-    ├── heartbeat.py       # Managerへの稼働状態送信(Heartbeat)
+    ├── heartbeat.py       # Orchestratorへの稼働状態送信(Heartbeat)
     ├── lambda_invoker.py  # Lambda(RIE)へのHTTPリクエスト送信
-    ├── pool_manager.py    # コンテナの取得・返却・ライフサイクル管理
+    ├── pool_orchestrator.py    # コンテナの取得・返却・ライフサイクル管理
     └── route_matcher.py   # routing.ymlベースのパスマッチング
 ```
 
 #### 主要コンポーネント
-| モジュール                   | 責務                                                                 |
-| ---------------------------- | -------------------------------------------------------------------- |
-| `core/proxy.py`              | API Gateway Lambda Proxy Integration互換イベント構築、Lambda RIE転送 |
-| `services/pool_manager.py`   | コンテナのキャパシティ確保、プロビジョニング要求、返却管理           |
-| `services/container_pool.py` | 関数ごとのセマフォ管理とコンテナインスタンスの保持                   |
-| `services/lambda_invoker.py` | `httpx` を使用した Lambda RIE へのリクエスト送信                     |
+| モジュール                      | 責務                                                                 |
+| ------------------------------- | -------------------------------------------------------------------- |
+| `core/proxy.py`                 | API Gateway Lambda Proxy Integration互換イベント構築、Lambda RIE転送 |
+| `services/pool_orchestrator.py` | コンテナのキャパシティ確保、プロビジョニング要求、返却管理           |
+| `services/container_pool.py`    | 関数ごとのセマフォ管理とコンテナインスタンスの保持                   |
+| `services/lambda_invoker.py`    | `httpx` を使用した Lambda RIE へのリクエスト送信                     |
 
-### 2.2 Manager Service (Internal)
+### 2.2 Orchestrator Service (Internal)
 - **役割**: Lambdaコンテナのライフサイクル管理（オンデマンド起動、アイドル停止、再起動時の復元）。
 - **通信**: GatewayからのHTTPリクエストおよびHeartbeatによりDocker APIを操作。
 - **機能**:
@@ -129,6 +129,6 @@ Traefik等のリバースプロキシを使用せず、各コンテナのポー�
 - ボリューム: `./data` (相対パス)
 
 ### 5.2 本番/検証環境 (DinD)
-`docker-compose.dind.yml` を使用して、親コンテナ(`onpre-app-root`)を起動します。
+`docker-compose.dind.yml` を使用して、親コンテナ(`esb-root`)を起動します。
 - 親コンテナが内部でさらに `docker-compose.yml` を使用して子コンテナ群を起動します。
 - ホストの `./data` は親コンテナの `/app/data` にマウントされ、子コンテナに引き継がれます。
