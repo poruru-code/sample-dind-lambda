@@ -27,7 +27,7 @@ async def test_get_lambda_host_params():
     # Assert
     assert host == "1.2.3.4"
 
-    expected_url = f"{config.MANAGER_URL}/containers/ensure"
+    expected_url = f"{config.ORCHESTRATOR_URL}/containers/ensure"
     mock_client.post.assert_called_once()
     call_args = mock_client.post.call_args
     assert call_args[0][0] == expected_url

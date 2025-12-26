@@ -1,5 +1,5 @@
 """
-Manager設定定義
+Orchestrator設定定義
 """
 
 import sys
@@ -7,9 +7,9 @@ from pydantic import Field
 from services.common.core.config import BaseAppConfig
 
 
-class ManagerConfig(BaseAppConfig):
+class OrchestratorConfig(BaseAppConfig):
     """
-    Managerサービスの設定管理
+    Orchestratorサービスの設定管理
     """
 
     IDLE_TIMEOUT_MINUTES: int = Field(default=5, description="アイドルコンテナのタイムアウト(分)")
@@ -33,7 +33,7 @@ class ManagerConfig(BaseAppConfig):
 
 # シングルトンとして設定をロード
 try:
-    config = ManagerConfig()
+    config = OrchestratorConfig()
 except Exception as e:
-    sys.stderr.write(f"Failed to load Manager configuration: {e}\n")
+    sys.stderr.write(f"Failed to load Orchestrator configuration: {e}\n")
     raise

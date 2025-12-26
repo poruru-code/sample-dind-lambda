@@ -17,7 +17,7 @@ from ..core.event_builder import EventBuilder
 from ..services.function_registry import FunctionRegistry
 from ..services.route_matcher import RouteMatcher
 from ..services.lambda_invoker import LambdaInvoker
-from ..client import ManagerClient
+from ..client import OrchestratorClient
 
 
 # ==========================================
@@ -37,8 +37,8 @@ def get_route_matcher(request: Request) -> RouteMatcher:
     return request.app.state.route_matcher
 
 
-def get_manager_client(request: Request) -> ManagerClient:
-    return request.app.state.manager_client
+def get_orchestrator_client(request: Request) -> OrchestratorClient:
+    return request.app.state.orchestrator_client
 
 
 def get_lambda_invoker(request: Request) -> LambdaInvoker:
@@ -52,7 +52,7 @@ def get_event_builder(request: Request) -> EventBuilder:
 # Service Dependency Type Aliases
 FunctionRegistryDep = Annotated[FunctionRegistry, Depends(get_function_registry)]
 RouteMatcherDep = Annotated[RouteMatcher, Depends(get_route_matcher)]
-ManagerClientDep = Annotated[ManagerClient, Depends(get_manager_client)]
+OrchestratorClientDep = Annotated[OrchestratorClient, Depends(get_orchestrator_client)]
 LambdaInvokerDep = Annotated[LambdaInvoker, Depends(get_lambda_invoker)]
 HttpClientDep = Annotated[AsyncClient, Depends(get_http_client)]
 EventBuilderDep = Annotated[EventBuilder, Depends(get_event_builder)]

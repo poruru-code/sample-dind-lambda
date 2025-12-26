@@ -10,7 +10,7 @@ import httpx
 import logging
 from services.gateway.api.deps import (
     get_http_client,
-    get_manager_client,
+    get_orchestrator_client,
     get_lambda_invoker,
     verify_authorization,
     resolve_lambda_target,
@@ -43,7 +43,7 @@ def mock_dependencies(main_app):
     # proxy_to_lambda は http_client を使う。
 
     main_app.dependency_overrides[get_http_client] = lambda: mock_client
-    main_app.dependency_overrides[get_manager_client] = lambda: mock_manager
+    main_app.dependency_overrides[get_orchestrator_client] = lambda: mock_manager
 
     # Auth & Routing Mocks
     async def mock_auth():
@@ -101,7 +101,7 @@ async def test_lambda_connection_error_logged_at_error_level(caplog):
     invoker = LambdaInvoker(mock_client, mock_registry, mock_container_manager, config)
 
     app.dependency_overrides[get_http_client] = lambda: mock_client
-    app.dependency_overrides[get_manager_client] = lambda: mock_manager
+    app.dependency_overrides[get_orchestrator_client] = lambda: mock_manager
     app.dependency_overrides[get_lambda_invoker] = lambda: invoker
     app.dependency_overrides[verify_authorization] = lambda: "test-user"
     app.dependency_overrides[resolve_lambda_target] = lambda: TargetFunction(
@@ -163,7 +163,7 @@ async def test_lambda_connection_error_includes_detailed_info(caplog):
     invoker = LambdaInvoker(mock_client, mock_registry, mock_container_manager, config)
 
     app.dependency_overrides[get_http_client] = lambda: mock_client
-    app.dependency_overrides[get_manager_client] = lambda: mock_manager
+    app.dependency_overrides[get_orchestrator_client] = lambda: mock_manager
     app.dependency_overrides[get_lambda_invoker] = lambda: invoker
     app.dependency_overrides[verify_authorization] = lambda: "test-user"
     app.dependency_overrides[resolve_lambda_target] = lambda: TargetFunction(

@@ -6,7 +6,7 @@
 ### 特徴
 - **True AWS Compatibility**: 実行エンジンに **AWS Lambda Runtime Interface Emulator (RIE)** を採用。クラウド上の Lambda と完全に一致する挙動をローカル環境で保証します。
 - **Integrated Developer Experience (CLI)**: 専用 CLI ツール `esb` を提供。環境構築からホットリロード開発まで、コマンド一つでシームレスな開発体験を提供します。
-- **Production-Ready Architecture**: 外部公開用の `Gateway` と特権を持つ `Manager` を分離したマイクロサービス構成により、セキュリティと耐障害性を実現しています。
+- **Production-Ready Architecture**: 外部公開用の `Gateway` と特権を持つ `Orchestrator` を分離したマイクロサービス構成により、セキュリティと耐障害性を実現しています。
 - **Full Stack in a Box**: S3互換ストレージ (RustFS)、DynamoDB互換DB (ScyllaDB)、ログ基盤を同梱しており、`esb up` だけで完全なクラウドネイティブ環境が手に入ります。
 - **Efficient Orchestration**: コンテナオーケストレーション技術により、Lambda関数コンテナをオンデマンドで起動・プーリング。`ReservedConcurrentExecutions` に基づくオートスケーリングとアイドル時の自動停止によりリソースを最適化します。
 
@@ -28,12 +28,12 @@ graph TD
     User([Developer / Client]) -->|HTTPS| Gateway[API Gateway - FastAPI]
     
     subgraph "Core Services"
-        Gateway -->|Invoke API| Manager[Container Manager]
+        Gateway -->|Invoke API| Orchestrator[Container Orchestrator]
         Gateway -->|Proxy Request| LambdaRIE[Lambda RIE Container]
         
-        Manager -->|Docker API| LambdaRIE
-        Manager -->|Provision| ScyllaDB[(ScyllaDB - DynamoDB)]
-        Manager -->|Provision| RustFS[(RustFS - S3)]
+        Orchestrator -->|Docker API| LambdaRIE
+        Orchestrator -->|Provision| ScyllaDB[(ScyllaDB - DynamoDB)]
+        Orchestrator -->|Provision| RustFS[(RustFS - S3)]
         
         LambdaRIE -->|AWS SDK| ScyllaDB
         LambdaRIE -->|AWS SDK| RustFS
@@ -53,8 +53,8 @@ graph TD
 ```
 
 ### システムコンポーネント
-- **`Gateway`**: API Gateway 互換プロキシ。`routing.yml` に基づき認証・ルーティングを行い、Manager を介して Lambda コンテナをオンデマンドで呼び出します。
-- **`Manager`**: コンテナのライフサイクル管理を担当。Docker Socket を介して Lambda RIE コンテナを動的にオーケストレーションし、リソース（DB/S3）のプロビジョニングも実行します。
+- **`Gateway`**: API Gateway 互換プロキシ。`routing.yml` に基づき認証・ルーティングを行い、Orchestrator を介して Lambda コンテナをオンデマンドで呼び出します。
+- **`Orchestrator`**: コンテナのライフサイクル管理を担当。Docker Socket を介して Lambda RIE コンテナを動的にオーケストレーションし、リソース（DB/S3）のプロビジョニングも実行します。
 - **`esb CLI`**: SAM テンプレート (`template.yaml`) を **Single Source of Truth** とし、開発を自動化する統合コマンドラインツールです。
 
 ### ファイル構成
@@ -63,7 +63,7 @@ graph TD
 ├── docker-compose.yml       # 開発用サービス構成
 ├── services/
 │   ├── gateway/             # API Gateway (FastAPI)
-│   └── manager/             # Container Manager
+│   └── orchestrator/             # Container Orchestrator
 ├── config/                  # 設定ファイル
 ├── tools/
 │   ├── cli/                 # ★ ESB CLI ツール (New)
@@ -211,7 +211,7 @@ esb reset
 | [trace-propagation.md](docs/trace-propagation.md)                   | X-Amzn-Trace-Id トレーシング         |
 | [container-management.md](docs/container-management.md)             | コンテナ管理とイメージ運用           |
 | [container-cache.md](docs/container-cache.md)                       | コンテナホストキャッシュ             |
-| [manager-restart-resilience.md](docs/manager-restart-resilience.md) | Manager再起動時の耐障害性            |
+| [orchestrator-restart-resilience.md](docs/orchestrator-restart-resilience.md) | Orchestrator再起動時の耐障害性            |
 | [network-optimization.md](docs/network-optimization.md)             | ネットワーク最適化                   |
 | [resilience.md](docs/resilience.md)                                 | システム回復性とサーキットブレーカー |
 | [generator-architecture.md](docs/generator-architecture.md)         | Generator内部アーキテクチャ          |
@@ -311,7 +311,7 @@ MyTable:
 ### テスト実行
 
 #### E2E (End-to-End) Tests
-E2Eテストは、`esb up` で構築された環境（Manager が Docker Socket を介して Lambda を動的に管理）に対して実行されます。
+E2Eテストは、`esb up` で構築された環境（Orchestrator が Docker Socket を介して Lambda を動的に管理）に対して実行されます。
 
 ```bash
 # 環境を起動した状態で実行

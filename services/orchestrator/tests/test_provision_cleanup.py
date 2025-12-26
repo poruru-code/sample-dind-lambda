@@ -1,5 +1,5 @@
 """
-Tests for Provisioning Cleanup logic in ContainerManager
+Tests for Provisioning Cleanup logic in ContainerOrchestrator
 """
 
 import pytest
@@ -13,11 +13,11 @@ async def test_provision_cleanup_on_failure():
     provision_containers でエラーが発生した際、
     それまでに作成されたコンテナがクリーンアップされることを確認
     """
-    from services.manager.service import ContainerManager
+    from services.orchestrator.service import ContainerOrchestrator
     from services.common.models.internal import WorkerInfo
 
     # Mock DockerAdaptor
-    manager = ContainerManager(network="test-net")
+    manager = ContainerOrchestrator(network="test-net")
     manager.docker = AsyncMock()
     
     # 1つ目は成功、2つ目でエラーを出すように設定

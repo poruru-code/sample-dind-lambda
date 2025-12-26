@@ -127,7 +127,7 @@ services:
       - AUTH_PASS=${AUTH_PASS?AUTH_PASS is required}
       - CONTAINERS_NETWORK=${LAMBDA_NETWORK?LAMBDA_NETWORK is required}
       - GATEWAY_INTERNAL_URL=https://onpre-gateway
-      - MANAGER_URL=http://onpre-manager:8081
+      - ORCHESTRATOR_URL=http://onpre-orchestrator:8081
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - RUSTFS_ACCESS_KEY=${RUSTFS_ACCESS_KEY?RUSTFS_ACCESS_KEY is required}
       - RUSTFS_SECRET_KEY=${RUSTFS_SECRET_KEY?RUSTFS_SECRET_KEY is required}
@@ -145,7 +145,7 @@ services:
       - POOL_ACQUIRE_TIMEOUT=${POOL_ACQUIRE_TIMEOUT:-5.0}
       - HEARTBEAT_INTERVAL=${HEARTBEAT_INTERVAL:-30}
     depends_on:
-      manager:
+      orchestrator:
         condition: service_started
       database:
         condition: service_healthy
@@ -156,14 +156,14 @@ services:
     restart: unless-stopped
 
   # ============================================
-  # Container Manager (Orchestrator)
+  # Container Orchestrator
   # ============================================
-  manager:
-    image: container-manager:latest
+  orchestrator:
+    image: container-orchestrator:latest
     build:
       context: .
-      dockerfile: services/manager/Dockerfile
-    container_name: onpre-manager
+      dockerfile: services/orchestrator/Dockerfile
+    container_name: onpre-orchestrator
     networks:
       - internal_network
     volumes:

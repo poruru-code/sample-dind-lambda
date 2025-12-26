@@ -35,7 +35,7 @@ ENV PYTHONPATH=/app
 
 # ソースコードのコピー
 COPY services/common /app/services/common
-COPY services/manager /app/services/manager
+COPY services/orchestrator /app/services/orchestrator
 COPY config /app/config
 
-CMD ["uvicorn", "services.manager.main:app", "--host", "0.0.0.0", "--port", "8081"]
+CMD ["uvicorn", "services.orchestrator.main:app", "--host", "0.0.0.0", "--port", "8081"]

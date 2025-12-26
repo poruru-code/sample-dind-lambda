@@ -1,10 +1,10 @@
-# Manager再起動時のコンテナ復元（Adopt & Sync）
+# Orchestrator再起動時のコンテナ復元（Adopt & Sync）
 
 ## 概要
 
-**Manager**コンテナが再起動した際、インメモリ状態（`last_accessed`, `locks`）が消失します。従来の「全削除（Kill-All）」方式では、Manager再起動時に全Lambdaコンテナを強制終了していたため、次のリクエストで全てコールドスタートが発生していました。
+**Orchestrator**コンテナが再起動した際、インメモリ状態（`last_accessed`, `locks`）が消失します。従来の「全削除（Kill-All）」方式では、Orchestrator再起動時に全Lambdaコンテナを強制終了していたため、次のリクエストで全てコールドスタートが発生していました。
 
-**Adopt & Sync**方式では、Manager起動時にDockerデーモンから既存コンテナの状態を同期し、実行中のコンテナは管理下に復帰、停止中のコンテナのみクリーンアップします。これにより、Manager再起動時もサービス断を最小化できます。
+**Adopt & Sync**方式では、Orchestrator起動時にDockerデーモンから既存コンテナの状態を同期し、実行中のコンテナは管理下に復帰、停止中のコンテナのみクリーンアップします。これにより、Orchestrator再起動時もサービス断を最小化できます。
 
 ---
 
@@ -12,7 +12,7 @@
 
 ### 1. `sync_with_docker()` メソッド
 
-Manager起動時（`main.py`の`lifespan`イベント）に実行されます。
+Orchestrator起動時（`main.py`の`lifespan`イベント）に実行されます。
 
 **処理フロー:**
 1. Dockerデーモンからラベル `created_by=edge-serverless-box` を持つ全コンテナを取得
@@ -21,7 +21,7 @@ Manager起動時（`main.py`の`lifespan`イベント）に実行されます。
    - **停止中（exited/paused等）**: `force=True` で削除
 3. 同期結果をログ出力
 
-**コード:** [`services/manager/service.py`](../services/manager/service.py)
+**コード:** [`services/orchestrator/service.py`](../services/orchestrator/service.py)
 
 ---
 
@@ -36,7 +36,7 @@ Manager起動時（`main.py`の`lifespan`イベント）に実行されます。
    - 処理を続行（エラーにしない）
 3. その他のエラーは再throwして上位でハンドリング
 
-**コード:** [`services/manager/service.py`](../services/manager/service.py)
+**コード:** [`services/orchestrator/service.py`](../services/orchestrator/service.py)
 
 ---
 
@@ -51,17 +51,17 @@ Manager起動時（`main.py`の`lifespan`イベント）に実行されます。
 
 **実行:**
 ```bash
-pytest services/manager/tests/test_service.py -v -k "sync_with_docker or conflict"
+pytest services/orchestrator/tests/test_service.py -v -k "sync_with_docker or conflict"
 ```
 
 ### E2Eテスト
 
-実際のManager再起動シナリオをテスト:
+実際のOrchestrator再起動シナリオをテスト:
 
-**テストシナリオ:** [`tests/test_e2e.py::TestE2E::test_manager_restart_container_adoption`](../tests/test_e2e.py)
+**テストシナリオ:** [`tests/test_e2e.py::TestE2E::test_orchestrator_restart_container_adoption`](../tests/test_e2e.py)
 
 1. Lambda関数を呼び出してコンテナを起動（ウォームアップ）
-2. `docker compose restart manager` でManagerを再起動
+2. `docker compose restart orchestrator` でOrchestratorを再起動
 3. 同じLambda関数を再度呼び出し → **ウォームスタートで起動することを確認**
 
 **実行:**
@@ -91,4 +91,4 @@ python tests/run_tests.py
 - TDD実装の詳細: 会話履歴 `72bcba0c-e16d-46c9-96ca-e79836ac5cef`
 - 関連コミット:
   - `feat: Adopt & Sync方式でSPOF・状態管理問題を解決`
-  - `test: Manager再起動時のコンテナ復元E2Eテストを追加`
+  - `test: Orchestrator再起動時のコンテナ復元E2Eテストを追加`

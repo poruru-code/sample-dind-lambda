@@ -12,13 +12,13 @@ from .config import config
 from services.common.core.http_client import HttpClientFactory
 from services.common.models.internal import WorkerInfo
 
-logger = logging.getLogger("manager.service")
+logger = logging.getLogger("orchestrator.service")
 
 # プロジェクト名を動的に取得
 PROJECT_NAME = metadata("edge-serverless-box")["Name"]
 
 
-class ContainerManager:
+class ContainerOrchestrator:
     """
     Manages lifecycle of Lambda containers.
     """
@@ -36,12 +36,12 @@ class ContainerManager:
 
         # Use config or default to 'bridge' if not specified.
         self.network = network or config.CONTAINERS_NETWORK or "bridge"
-        logger.info(f"ContainerManager initialized with network: {self.network}")
+        logger.info(f"ContainerOrchestrator initialized with network: {self.network}")
 
     async def startup(self):
         """ライフサイクル開始時に呼び出し、共有 HTTP Client を初期化"""
         self._http_client = self._http_factory.create_async_client()
-        logger.info("ContainerManager HTTP client initialized")
+        logger.info("ContainerOrchestrator HTTP client initialized")
 
     async def ensure_container_running(
         self, name: str, image: Optional[str] = None, env: Optional[Dict[str, str]] = None
@@ -256,7 +256,7 @@ class ContainerManager:
 
     async def shutdown(self):
         """Clean up resources (HTTP client, thread pools, etc.)"""
-        logger.info("Shutting down ContainerManager...")
+        logger.info("Shutting down ContainerOrchestrator...")
         if self._http_client:
             await self._http_client.aclose()
             self._http_client = None

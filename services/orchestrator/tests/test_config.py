@@ -1,19 +1,19 @@
-from services.manager.config import ManagerConfig
+from services.orchestrator.config import OrchestratorConfig
 from services.common.core.config import BaseAppConfig
 
 
 def test_manager_config_inheritance():
     """
-    TDD: ManagerConfig should inherit from BaseAppConfig.
+    TDD: OrchestratorConfig should inherit from BaseAppConfig.
     """
-    assert issubclass(ManagerConfig, BaseAppConfig)
+    assert issubclass(OrchestratorConfig, BaseAppConfig)
 
 
 def test_manager_config_fields():
     """
-    TDD: ManagerConfig should have IDLE_TIMEOUT_MINUTES and CONTAINERS_NETWORK.
+    TDD: OrchestratorConfig should have IDLE_TIMEOUT_MINUTES and CONTAINERS_NETWORK.
     """
-    config = ManagerConfig()
+    config = OrchestratorConfig()
     assert hasattr(config, "IDLE_TIMEOUT_MINUTES")
     assert hasattr(config, "CONTAINERS_NETWORK")
     # Verify defaults
@@ -32,7 +32,7 @@ def test_manager_config_lambda_defaults():
     - READINESS_TIMEOUT: コンテナReadinessチェックのタイムアウト
     - DOCKER_DAEMON_TIMEOUT: Docker Daemon起動待機のタイムアウト
     """
-    config = ManagerConfig()
+    config = OrchestratorConfig()
 
     # Inherited from BaseAppConfig
     assert hasattr(config, "LAMBDA_PORT"), "Should have LAMBDA_PORT from BaseAppConfig"
@@ -51,7 +51,7 @@ def test_manager_config_docker_settings():
     """
     TDD Red: DockerAdaptor用の設定フィールドが存在することを検証
     """
-    config = ManagerConfig()
+    config = OrchestratorConfig()
     # Docker専用スレッドプールのワーカー数
     assert hasattr(config, "DOCKER_MAX_WORKERS")
     assert config.DOCKER_MAX_WORKERS == 20

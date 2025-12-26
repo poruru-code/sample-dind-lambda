@@ -17,7 +17,7 @@ from tests.conftest import (
     GATEWAY_URL,
     VERIFY_SSL,
     DEFAULT_REQUEST_TIMEOUT,
-    MANAGER_RESTART_WAIT,
+    ORCHESTRATOR_RESTART_WAIT,
     STABILIZATION_WAIT,
     query_victorialogs,
     request_with_retry,
@@ -28,7 +28,7 @@ from tests.conftest import (
 class TestResilience:
     """耐障害性・パフォーマンス機能の検証"""
 
-    def test_manager_restart_recovery(self, auth_token):
+    def test_orchestrator_restart_recovery(self, auth_token):
         """
         E2E: Manager再起動時のコンテナ復元検証 (Adopt & Sync)
 
@@ -47,14 +47,14 @@ class TestResilience:
         # 2. Managerコンテナを再起動
         print("Step 2: Restarting Manager container...")
         restart_result = subprocess.run(
-            ["docker", "compose", "restart", "manager"],
+            ["docker", "compose", "restart", "orchestrator"],
             capture_output=True,
             text=True,
             cwd=os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
         )
         assert restart_result.returncode == 0, f"Failed to restart Manager: {restart_result.stderr}"
 
-        time.sleep(MANAGER_RESTART_WAIT)
+        time.sleep(ORCHESTRATOR_RESTART_WAIT)
 
         # Managerのヘルスチェック（間接的）
         for i in range(15):
@@ -132,13 +132,13 @@ class TestResilience:
         result_1 = query_victorialogs(root_id_1)
         logs_1 = result_1.get("hits", [])
         manager_req_1 = [
-            log_entry for log_entry in logs_1 if "manager.main" in str(log_entry.get("logger", ""))
+            log_entry for log_entry in logs_1 if "orchestrator.main" in str(log_entry.get("logger", ""))
         ]
 
         result_2 = query_victorialogs(root_id_2)
         logs_2 = result_2.get("hits", [])
         manager_req_2 = [
-            log_entry for log_entry in logs_2 if "manager.main" in str(log_entry.get("logger", ""))
+            log_entry for log_entry in logs_2 if "orchestrator.main" in str(log_entry.get("logger", ""))
         ]
 
         print(f"Initial Manager Logs: {len(manager_req_1)}")

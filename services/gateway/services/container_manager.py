@@ -5,9 +5,9 @@ from ..config import GatewayConfig
 from ..core.exceptions import (
     FunctionNotFoundError,
     ContainerStartError,
-    ManagerError,
-    ManagerTimeoutError,
-    ManagerUnreachableError,
+    OrchestratorError,
+    OrchestratorTimeoutError,
+    OrchestratorUnreachableError,
 )
 from services.common.models.internal import ContainerEnsureRequest, ContainerInfoResponse
 from services.common.core.request_context import get_trace_id
@@ -44,7 +44,7 @@ class HttpContainerManager:
             logger.debug(f"Cache hit for {function_name}: {cached_host}")
             return cached_host
 
-        url = f"{self.config.MANAGER_URL}/containers/ensure"
+        url = f"{self.config.ORCHESTRATOR_URL}/containers/ensure"
 
         # モデルを作成
         request_model = ContainerEnsureRequest(
@@ -62,7 +62,7 @@ class HttpContainerManager:
                 url,
                 json=request_model.model_dump(),
                 headers=headers,
-                timeout=self.config.MANAGER_TIMEOUT,
+                timeout=self.config.ORCHESTRATOR_TIMEOUT,
             )
             resp.raise_for_status()
 
@@ -78,12 +78,12 @@ class HttpContainerManager:
 
         except httpx.TimeoutException as e:
             logger.error(f"Manager request timed out: {e}")
-            raise ManagerTimeoutError(f"Container startup timeout for {function_name}") from e
+            raise OrchestratorTimeoutError(f"Container startup timeout for {function_name}") from e
 
         except httpx.RequestError as e:
             # 接続失敗
             logger.error(f"Failed to connect to Manager: {e}")
-            raise ManagerUnreachableError(e) from e
+            raise OrchestratorUnreachableError(e) from e
 
         except httpx.HTTPStatusError as e:
             # Manager からの HTTP エラーレスポンス
@@ -98,6 +98,6 @@ class HttpContainerManager:
                 # 503 Service Unavailable -> ContainerStartError
                 raise ContainerStartError(function_name, Exception(detail)) from e
             elif status in [400, 408, 409]:
-                raise ManagerError(status, detail) from e
+                raise OrchestratorError(status, detail) from e
             else:
-                raise ManagerError(status, detail) from e
+                raise OrchestratorError(status, detail) from e
