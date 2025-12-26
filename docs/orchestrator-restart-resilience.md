@@ -15,7 +15,7 @@
 Orchestrator起動時（`main.py`の`lifespan`イベント）に実行されます。
 
 **処理フロー:**
-1. Dockerデーモンからラベル `created_by=edge-serverless-box` を持つ全コンテナを取得
+1. Dockerデーモンからラベル `created_by=esb` を持つ全コンテナを取得
 2. コンテナの状態を確認:
    - **実行中（running）**: `last_accessed` に現在時刻を登録して管理下に復帰
    - **停止中（exited/paused等）**: `force=True` で削除
@@ -78,11 +78,11 @@ python tests/run_tests.py
 
 ## 効果
 
-| 観点 | Before (Kill-All) | After (Adopt & Sync) |
-|------|-------------------|----------------------|
+| 観点       | Before (Kill-All)      | After (Adopt & Sync)   |
+| ---------- | ---------------------- | ---------------------- |
 | **可用性** | 再起動時に全サービス断 | 実行中コンテナは維持 ✅ |
-| **整合性** | 強引に整合（全削除） | Dockerと同期して整合 ✅ |
-| **堅牢性** | Conflict未対応 | 自己修復的に動作 ✅ |
+| **整合性** | 強引に整合（全削除）   | Dockerと同期して整合 ✅ |
+| **堅牢性** | Conflict未対応         | 自己修復的に動作 ✅     |
 
 ---
 

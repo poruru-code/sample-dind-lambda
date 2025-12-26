@@ -8,10 +8,10 @@
 システムは以下の主要コンポーネントで構成されます。
 
 ```mermaid
-graph TD
-    User[Client / Developer]
+flowchart TD
+    User["Client / Developer"]
     
-    subgraph Host["Host OS / DinD Parent Container"]
+    subgraph Host ["Host OS / DinD Parent Container"]
         Gateway["Gateway API<br>(:443)"]
         Orchestrator["Orchestrator API<br>(Internal)"]
         RustFS["RustFS S3<br>(:9000)"]
@@ -69,12 +69,12 @@ gateway/app/
 ```
 
 #### 主要コンポーネント
-| モジュール                   | 責務                                                                 |
-| ---------------------------- | -------------------------------------------------------------------- |
-| `core/proxy.py`              | API Gateway Lambda Proxy Integration互換イベント構築、Lambda RIE転送 |
-| `services/pool_orchestrator.py`   | コンテナのキャパシティ確保、プロビジョニング要求、返却管理           |
-| `services/container_pool.py` | 関数ごとのセマフォ管理とコンテナインスタンスの保持                   |
-| `services/lambda_invoker.py` | `httpx` を使用した Lambda RIE へのリクエスト送信                     |
+| モジュール                      | 責務                                                                 |
+| ------------------------------- | -------------------------------------------------------------------- |
+| `core/proxy.py`                 | API Gateway Lambda Proxy Integration互換イベント構築、Lambda RIE転送 |
+| `services/pool_orchestrator.py` | コンテナのキャパシティ確保、プロビジョニング要求、返却管理           |
+| `services/container_pool.py`    | 関数ごとのセマフォ管理とコンテナインスタンスの保持                   |
+| `services/lambda_invoker.py`    | `httpx` を使用した Lambda RIE へのリクエスト送信                     |
 
 ### 2.2 Orchestrator Service (Internal)
 - **役割**: Lambdaコンテナのライフサイクル管理（オンデマンド起動、アイドル停止、再起動時の復元）。

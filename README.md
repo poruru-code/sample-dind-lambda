@@ -24,31 +24,31 @@
 ## アーキテクチャ
 
 ```mermaid
-graph TD
-    User([Developer / Client]) -->|HTTPS| Gateway[API Gateway - FastAPI]
+flowchart TD
+    User(["Developer / Client"]) -->|HTTPS| Gateway["API Gateway - FastAPI"]
     
-    subgraph "Core Services"
-        Gateway -->|Invoke API| Orchestrator[Container Orchestrator]
-        Gateway -->|Proxy Request| LambdaRIE[Lambda RIE Container]
+    subgraph Core ["Core Services"]
+        Gateway -->|Invoke API| Orchestrator["Container Orchestrator"]
+        Gateway -->|Proxy Request| LambdaRIE["Lambda RIE Container"]
         
         Orchestrator -->|Docker API| LambdaRIE
-        Orchestrator -->|Provision| ScyllaDB[(ScyllaDB - DynamoDB)]
-        Orchestrator -->|Provision| RustFS[(RustFS - S3)]
+        Orchestrator -->|Provision| ScyllaDB[("ScyllaDB - DynamoDB")]
+        Orchestrator -->|Provision| RustFS[("RustFS - S3")]
         
         LambdaRIE -->|AWS SDK| ScyllaDB
         LambdaRIE -->|AWS SDK| RustFS
-        LambdaRIE -->|HTTP/JSON Logs| VictoriaLogs[(VictoriaLogs)]
+        LambdaRIE -->|HTTP/JSON Logs| VictoriaLogs[("VictoriaLogs")]
     end
     
-    subgraph "CLI Toolchain (esb)"
-        esb[esb CLI] -->|build| Generator[SAM Generator]
-        esb -->|up| DockerCompose[Docker Compose]
-        esb -->|up| Provisioner[Provisioner]
-        esb -->|watch| Watcher[File Watcher]
+    subgraph Toolchain ["CLI Toolchain (esb)"]
+        esb["esb CLI"] -->|build| Generator["SAM Generator"]
+        esb -->|up| DockerCompose["Docker Compose"]
+        esb -->|up| Provisioner["Provisioner"]
+        esb -->|watch| Watcher["File Watcher"]
     end
     
-    Generator -->|Automate| Routing[routing.yml]
-    Generator -->|Automate| Dockerfiles[Dockerfiles]
+    Generator -->|Automate| Routing["routing.yml"]
+    Generator -->|Automate| Dockerfiles["Dockerfiles"]
     Watcher -->|Trigger| esb
 ```
 
@@ -206,18 +206,18 @@ esb reset
 
 詳細な技術ドキュメントは `docs/` ディレクトリにあります。
 
-| ドキュメント                                                        | 説明                                 |
-| ------------------------------------------------------------------- | ------------------------------------ |
-| [trace-propagation.md](docs/trace-propagation.md)                   | X-Amzn-Trace-Id トレーシング         |
-| [container-management.md](docs/container-management.md)             | コンテナ管理とイメージ運用           |
-| [container-cache.md](docs/container-cache.md)                       | コンテナホストキャッシュ             |
-| [orchestrator-restart-resilience.md](docs/orchestrator-restart-resilience.md) | Orchestrator再起動時の耐障害性            |
-| [network-optimization.md](docs/network-optimization.md)             | ネットワーク最適化                   |
-| [resilience.md](docs/resilience.md)                                 | システム回復性とサーキットブレーカー |
-| [generator-architecture.md](docs/generator-architecture.md)         | Generator内部アーキテクチャ          |
-| [client-auth-spec.md](docs/client-auth-spec.md)                     | クライアント認証仕様                 |
-| [autoscaling.md](docs/autoscaling.md)                               | オートスケーリングとプーリング       |
-| [spec.md](docs/spec.md)                                             | システム仕様                         |
+| ドキュメント                                                                  | 説明                                 |
+| ----------------------------------------------------------------------------- | ------------------------------------ |
+| [trace-propagation.md](docs/trace-propagation.md)                             | X-Amzn-Trace-Id トレーシング         |
+| [container-management.md](docs/container-management.md)                       | コンテナ管理とイメージ運用           |
+| [container-cache.md](docs/container-cache.md)                                 | コンテナホストキャッシュ             |
+| [orchestrator-restart-resilience.md](docs/orchestrator-restart-resilience.md) | Orchestrator再起動時の耐障害性       |
+| [network-optimization.md](docs/network-optimization.md)                       | ネットワーク最適化                   |
+| [resilience.md](docs/resilience.md)                                           | システム回復性とサーキットブレーカー |
+| [generator-architecture.md](docs/generator-architecture.md)                   | Generator内部アーキテクチャ          |
+| [client-auth-spec.md](docs/client-auth-spec.md)                               | クライアント認証仕様                 |
+| [autoscaling.md](docs/autoscaling.md)                                         | オートスケーリングとプーリング       |
+| [spec.md](docs/spec.md)                                                       | システム仕様                         |
 
 ## 開発ガイド
 
