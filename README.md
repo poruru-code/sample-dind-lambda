@@ -175,6 +175,9 @@ esb watch
 * 対象関数の Docker イメージのみ高速リビルド
 * 実行中のコンテナを停止（次回リクエスト時に新コードで起動）
 
+> [!TIP]
+> **スケーリングのデモ**: `esb watch` を起動したまま `template.yaml` の `ReservedConcurrentExecutions` を書き換えて保存してみてください。Gateway が即座に設定変更を反映し、コンテナプールの最大サイズが動的に変更される様子を観察できます。
+
 
 
 ### 環境の停止 (`esb down`)
