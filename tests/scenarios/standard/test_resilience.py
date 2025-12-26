@@ -50,7 +50,7 @@ class TestResilience:
             ["docker", "compose", "restart", "manager"],
             capture_output=True,
             text=True,
-            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            cwd=os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
         )
         assert restart_result.returncode == 0, f"Failed to restart Manager: {restart_result.stderr}"
 

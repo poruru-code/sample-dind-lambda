@@ -39,6 +39,9 @@ def main():
     parser.add_argument(
         "--test-target", type=str, help="Specific pytest target (e.g. tests/test_trace.py)"
     )
+    parser.add_argument(
+        "--env-file", type=str, default="tests/environments/.env.standard", help="Path to env file (default: tests/environments/.env.standard)"
+    )
 
     args = parser.parse_args()
 
@@ -55,96 +58,152 @@ def main():
         if args.unit_only:
             sys.exit(0)
 
-    # --- 環境設定 ---
-    # .env.test を最初にロード（ESB_TEMPLATE等の設定を取得）
-    env_file = PROJECT_ROOT / "tests" / ".env.test"
-    if env_file.exists():
-        load_dotenv(env_file, override=False)
+    # --- Scenarios Definition ---
+    # シナリオ定義: 名前, 環境変数ファイル, テスト対象 (ファイル or ディレクトリ)
+    SCENARIOS = [
+        {
+            "name": "Standard",
+            "env_file": "tests/environments/.env.standard",
+            "targets": [
+                "tests/scenarios/standard/",
+            ],
+            "exclude": [] # No longer needed as directories are separated
+        },
+        {
+            "name": "Auto-Scaling",
+            "env_file": "tests/environments/.env.autoscaling",
+            "targets": ["tests/scenarios/autoscaling/"],
+            "exclude": []
+        }
+    ]
 
+    # CLI引数でターゲット指定があった場合は単発実行モード (Legacy compatible)
+    if args.test_target:
+        # User specified target, simple run
+        # env_file defaults need update if user doesn't specify
+        # Should we look in environments/? Default to .env.standard in environments/
+        default_env = "tests/environments/.env.standard"
+        
+        user_scenario = {
+            "name": "User-Specified",
+            "env_file": args.env_file if args.env_file != "tests/environments/.env.standard" else default_env, 
+            # Note: parser default is "tests/.env.test", we should update parser default too or handle here.
+            "targets": [args.test_target],
+            "exclude": []
+        }
+        run_scenario(args, user_scenario)
+        sys.exit(0)
+
+    # 全シナリオ実行モード
+    print("\n🚀 Starting Full E2E Test Suite (Scenario-Based)\n")
+    failed_scenarios = []
+
+    for scenario in SCENARIOS:
+        print(f"\n▶ Running Scenario: {scenario['name']}")
+        try:
+            run_scenario(args, scenario)
+        except SystemExit as e:
+            if e.code != 0:
+                print(f"\n❌ Scenario '{scenario['name']}' FAILED.")
+                failed_scenarios.append(scenario['name'])
+            else:
+                 print(f"\n✅ Scenario '{scenario['name']}' PASSED.")
+        except Exception as e:
+            print(f"\n❌ Scenario '{scenario['name']}' FAILED with exception: {e}")
+            failed_scenarios.append(scenario['name'])
+
+    if failed_scenarios:
+        print(f"\n💥 The following scenarios failed: {', '.join(failed_scenarios)}")
+        sys.exit(1)
+    
+    print("\n🎉 ALL SCENARIOS PASSED!")
+    sys.exit(0)
+
+
+def run_scenario(args, scenario):
+    """単一シナリオの実行"""
+    # 1. Environment Setup
+    # args.env_file は無視して scenario['env_file'] を使用
+    env_path = PROJECT_ROOT / scenario["env_file"]
+    if env_path.exists():
+        load_dotenv(env_path, override=True) # Override previous scenario vars
+        print(f"Loaded environment from: {env_path}")
+    else:
+        print(f"Warning: Environment file not found: {env_path}")
+    
+    # Reload env vars into dict to pass to subprocess
+    # NOTE: os.environ is updated by load_dotenv, but we explicitly fetch fresh copy
     env = os.environ.copy()
 
-    # ESB_TEMPLATE: .env.test から読み込んだ相対パスを絶対パスに変換
+    # ESB_TEMPLATE etc setup (Shared logic)
     esb_template = os.getenv("ESB_TEMPLATE", "tests/fixtures/template.yaml")
     env["ESB_TEMPLATE"] = str(PROJECT_ROOT / esb_template)
-
-    # COMPOSE_FILE: テスト用定義をマージする
-    # Windows/Linuxで区切り文字が異なるため注意
+    
     separator = ";" if os.name == "nt" else ":"
-
     base_compose = "docker-compose.dind.yml" if args.dind else "docker-compose.yml"
     compose_files = [base_compose, "tests/docker-compose.test.yml"]
     env["COMPOSE_FILE"] = separator.join(compose_files)
 
-    # 子プロセス実行用に環境変数を適用
+    # Update current process env for helper calls
     os.environ.update(env)
 
     try:
-        # --- ステップ実行 ---
-
-        # 1. Reset or Build
-        # NOTE: esb reset は COMPOSE_FILE を継承しないため、テスト環境では使用しない。
-        # 代わりに down → 生成物削除 → build の明示的なフローで制御する。
+        # 2. Reset / Build
+        # Reset is recommended between scenarios to force env var refresh in containers
+        # But we can skip full artifact delete to save time, mostly just down/up needed
+        
+        # Always DOWN first to stop containers from previous scenario
+        run_esb(["down"], check=False)
+        
         if args.reset:
-            # 1a. コンテナとボリュームを停止・削除
-            run_esb(["down", "--volumes"])
-            
-            # 1b. 生成物ディレクトリを削除（ディレクトリ化したファイル含む）
-            # Docker が bind mount 先を自動でディレクトリ作成した場合の復旧にも対応
-            # Note: tools.cli.config.E2E_DIR はインポート時に評価されるため、
-            #       環境変数セットアップ前にインポートすると誤ったパスになる可能性がある
+             # Full reset requested (artifacts etc)
+             # ... (Same reset logic as before) ...
             import shutil
             esb_dir = PROJECT_ROOT / "tests" / "fixtures" / ".esb"
             if esb_dir.exists():
-                print(f"Removing {esb_dir}...")
                 shutil.rmtree(esb_dir)
-            
-            # 1c. ビルド（Generator + Docker イメージ）
             run_esb(["build", "--no-cache"])
         elif args.build:
             run_esb(["build", "--no-cache"])
+        
+        # Ensure 'build' happens at least once if artifacts missing? 
+        # For now assume user runs with --build or --reset initially or artifacts exist.
 
-        # 3. Up
-        # 証明書生成は内部で行われ、--waitで起動完了までブロックする
-        # DinDモードかどうかのフラグは compose file で制御しているので up コマンド自体は変わらない
+        # 3. UP
         up_args = ["up", "--detach", "--wait"]
+        # Only rebuild if explicitly asked, otherwise reuse images
         if args.build or args.reset:
             up_args.append("--build")
+        
         run_esb(up_args)
 
-        # 4. Run Tests (Pytest)
-        print("\n=== Running E2E Tests ===\n")
-        # pytest実行時は環境変数(COMPOSE_FILE等)が渡った状態で実行される
-        # .env.testの内容も必要だが、CLIのupコマンド内でload_dotenvされている。
-        # pytest側でも読み込む必要があるため、環境変数をロードするか、pytest内で読み込ませる。
-        # run_tests.pyでload_dotenvしておくのが無難。
-        env_file = PROJECT_ROOT / "tests" / ".env.test"
-        if env_file.exists():
-            load_dotenv(env_file, override=False)
+        # 4. Run Tests
+        print(f"\n=== Running Tests for {scenario['name']} ===\n")
+        
+        pytest_cmd = [sys.executable, "-m", "pytest"] + scenario["targets"] + ["-v"]
+        
+        # Excludes
+        for excl in scenario["exclude"]:
+            pytest_cmd.extend(["--ignore", excl])
 
-        # 環境変数を再取得（load_dotenv後）
-        pytest_env = os.environ.copy()
-
-        target = args.test_target if args.test_target else "tests/"
-        pytest_cmd = [sys.executable, "-m", "pytest", target, "-v"]
-        result = subprocess.run(pytest_cmd, cwd=PROJECT_ROOT, check=False, env=pytest_env)
-
+        result = subprocess.run(pytest_cmd, cwd=PROJECT_ROOT, check=False, env=env)
+        
         if result.returncode != 0:
-            print("\n❌ Tests failed.")
-            # テスト失敗時でもクリーンアップは finally で実行
             sys.exit(result.returncode)
-
-        print("\n🎉 Tests passed successfully!")
 
     except subprocess.CalledProcessError as e:
         print(f"Error executing command: {e}")
         sys.exit(1)
-
+    
     finally:
-        # 5. Cleanup
+        # 5. Cleanup (Conditional)
         if args.cleanup:
-            # downコマンドも COMPOSE_FILE を参照して正しく終了させる
             run_esb(["down"])
-
+        # If not cleanup, we leave containers running for debugging last scenario
+        # But next scenario execution will force down anyway.
 
 if __name__ == "__main__":
-    sys.exit(main())
+    if len(sys.argv) > 1 and sys.argv[1] == "run_scenario":
+        # Internal call wrapper if needed? No, just call main().
+        pass
+    main()

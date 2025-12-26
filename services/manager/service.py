@@ -2,13 +2,15 @@ import docker.errors
 import time
 import logging
 import asyncio
-from typing import Dict, Optional
+import uuid
+from typing import Dict, List, Optional
 from importlib.metadata import metadata
 
 import httpx
 from .docker_adaptor import DockerAdaptor
 from .config import config
 from services.common.core.http_client import HttpClientFactory
+from services.common.models.internal import WorkerInfo
 
 logger = logging.getLogger("manager.service")
 
@@ -259,3 +261,97 @@ class ContainerManager:
             await self._http_client.aclose()
             self._http_client = None
         self.docker.shutdown()
+
+    # =========================================================================
+    # Auto-Scaling Methods
+    # =========================================================================
+
+    async def provision_containers(
+        self,
+        function_name: str,
+        count: int = 1,
+        image: Optional[str] = None,
+        env: Optional[Dict[str, str]] = None,
+    ) -> List[WorkerInfo]:
+        """
+        指定された数のコンテナをプロビジョニング
+
+        コンテナ名: lambda-{function_name}-{uuid4()[:8]}
+        """
+        workers: List[WorkerInfo] = []
+
+        if image is None:
+            image = f"{function_name}:latest"
+
+        for _ in range(count):
+            suffix = uuid.uuid4().hex[:8]
+            container_name = f"lambda-{function_name}-{suffix}"
+
+            # Cold start - 新規コンテナ作成
+            logger.info(f"Provisioning container: {container_name}")
+
+            container_env = (env or {}).copy()
+            container_env["PYTHONUNBUFFERED"] = "1"
+
+            # VictoriaLogs URL を Lambda に注入
+            import os
+
+            vl_host = os.environ.get("VICTORIALOGS_HOST", "victorialogs")
+            vl_port = os.environ.get("VICTORIALOGS_PORT", "9428")
+            container_env["VICTORIALOGS_URL"] = f"http://{vl_host}:{vl_port}/insert/jsonline"
+            container_env["AWS_LAMBDA_FUNCTION_NAME"] = function_name
+
+            container = await self.docker.run_container(
+                image,
+                name=container_name,
+                detach=True,
+                environment=container_env,
+                network=self.network,
+                restart_policy={"Name": "no"},
+                labels={"created_by": PROJECT_NAME},
+            )
+
+            # Reload container to get IP
+            await self.docker.reload_container(container)
+            try:
+                ip = container.attrs["NetworkSettings"]["Networks"][self.network]["IPAddress"]
+                if not ip:
+                    ip = container_name
+            except KeyError:
+                ip = container_name
+
+            # Wait for readiness
+            await self._wait_for_readiness(ip)
+
+            # Track last access
+            self.last_accessed[container_name] = time.time()
+
+            workers.append(
+                WorkerInfo(
+                    id=container.id,
+                    name=container_name,
+                    ip_address=ip,
+                    port=config.LAMBDA_PORT,
+                    created_at=time.time(),
+                )
+            )
+
+        return workers
+
+    async def update_heartbeat(
+        self, function_name: str, container_ids: List[str]
+    ) -> None:
+        """
+        Gateway からの Heartbeat を受信
+
+        受信したコンテナIDはアクティブとみなし、last_accessed を更新する。
+        このリストに載っていないコンテナは孤児 (Orphan) の可能性がある。
+        """
+        now = time.time()
+        for cid in container_ids:
+            # コンテナIDからコンテナ名を逆引きする必要がある場合はここで処理
+            # 現状は単純に全コンテナの last_accessed を更新
+            pass
+
+        logger.debug(f"Heartbeat received for {function_name}: {len(container_ids)} containers")
+

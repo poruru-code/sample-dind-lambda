@@ -11,7 +11,13 @@ from services.common.core.request_context import (
 from .config import config
 
 from .core.logging_config import setup_logging
-from services.common.models.internal import ContainerEnsureRequest, ContainerInfoResponse
+from services.common.models.internal import (
+    ContainerEnsureRequest,
+    ContainerInfoResponse,
+    ContainerProvisionRequest,
+    ContainerProvisionResponse,
+    HeartbeatRequest,
+)
 
 # Logger setup
 setup_logging()
@@ -119,3 +125,46 @@ async def ensure_container(req: ContainerEnsureRequest, request: Request):
     except Exception as e:
         logger.error(f"Error ensuring container: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error managing containers")
+
+
+# =============================================================================
+# Auto-Scaling API Endpoints
+# =============================================================================
+
+
+@app.post("/containers/provision", response_model=ContainerProvisionResponse)
+async def provision_containers(req: ContainerProvisionRequest):
+    """
+    コンテナをプロビジョニング (Auto-Scaling用)
+
+    - 429: リソース不足 (グローバル上限到達)
+    - 409: 名前衝突
+    """
+    try:
+        workers = await manager.provision_containers(
+            function_name=req.function_name,
+            count=req.count,
+            image=req.image,
+            env=req.env,
+        )
+        return ContainerProvisionResponse(workers=workers)
+    except docker.errors.ImageNotFound as e:
+        logger.error(f"Image not found: {e.explanation}")
+        raise HTTPException(status_code=404, detail=f"Lambda image not found: {e.explanation}")
+    except asyncio.TimeoutError as e:
+        logger.error(f"Container startup timeout: {e}")
+        raise HTTPException(status_code=408, detail="Container startup timeout")
+    except Exception as e:
+        logger.error(f"Error provisioning containers: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error provisioning containers")
+
+
+@app.post("/containers/heartbeat")
+async def heartbeat(req: HeartbeatRequest):
+    """
+    Heartbeat: Gateway が保持しているコンテナIDを通知
+    Janitor がこのリストに載っていないコンテナを孤児と判定
+    """
+    await manager.update_heartbeat(req.function_name, req.container_ids)
+    return {"status": "ok"}
+

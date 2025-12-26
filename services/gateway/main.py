@@ -76,11 +76,108 @@ async def lifespan(app: FastAPI):
 
     container_manager = HttpContainerManager(config, client)
 
+    # === Auto-Scaling: Pool Mode Initialization ===
+    pool_manager = None
+    janitor = None
+
+    if config.ENABLE_CONTAINER_POOLING:
+        from .services.pool_manager import PoolManager
+        from .services.janitor import HeartbeatJanitor
+
+        # Create a provision client wrapper for PoolManager
+        class ProvisionClient:
+            """Wrapper for Manager provision API"""
+
+            def __init__(self, http_client: httpx.AsyncClient, manager_url: str):
+                self.client = http_client
+                self.manager_url = manager_url
+
+            async def provision(self, function_name: str):
+                """Provision a container and return WorkerInfo list"""
+                from services.common.models.internal import WorkerInfo
+
+                func_config = function_registry.get_function_config(function_name)
+                image = func_config.get("image") if func_config else None
+                env = func_config.get("environment", {}) if func_config else {}
+
+                response = await self.client.post(
+                    f"{self.manager_url}/containers/provision",
+                    json={
+                        "function_name": function_name,
+                        "count": 1,
+                        "image": image,
+                        "env": env,
+                    },
+                    timeout=config.MANAGER_TIMEOUT,
+                )
+                response.raise_for_status()
+                data = response.json()
+                return [
+                    WorkerInfo(
+                        id=w["id"],
+                        name=w["name"],
+                        ip_address=w["ip_address"],
+                        port=w.get("port", config.LAMBDA_PORT),
+                        created_at=w.get("created_at", 0.0),
+                    )
+                    for w in data["workers"]
+                ]
+
+        def config_loader(function_name: str):
+            """Load scaling config for a function"""
+            func_config = function_registry.get_function_config(function_name) or {}
+            return {
+                "scaling": {
+                    "max_capacity": func_config.get("scaling", {}).get(
+                        "max_capacity", config.DEFAULT_MAX_CAPACITY
+                    ),
+                    "min_capacity": func_config.get("scaling", {}).get(
+                        "min_capacity", config.DEFAULT_MIN_CAPACITY
+                    ),
+                    "acquire_timeout": func_config.get("scaling", {}).get(
+                        "acquire_timeout", config.POOL_ACQUIRE_TIMEOUT
+                    ),
+                }
+            }
+
+        provision_client = ProvisionClient(client, config.MANAGER_URL)
+        pool_manager = PoolManager(
+            provision_client=provision_client,
+            config_loader=config_loader,
+        )
+
+        # Create Manager client wrapper for heartbeat
+        class HeartbeatClient:
+            """Wrapper for Manager heartbeat API"""
+
+            def __init__(self, http_client: httpx.AsyncClient, manager_url: str):
+                self.client = http_client
+                self.manager_url = manager_url
+
+            async def heartbeat(self, function_name: str, container_ids: list):
+                await self.client.post(
+                    f"{self.manager_url}/containers/heartbeat",
+                    json={"function_name": function_name, "container_ids": container_ids},
+                    timeout=10.0,
+                )
+
+        heartbeat_client = HeartbeatClient(client, config.MANAGER_URL)
+        janitor = HeartbeatJanitor(
+            pool_manager=pool_manager,
+            manager_client=heartbeat_client,
+            interval=config.HEARTBEAT_INTERVAL,
+        )
+
+        await janitor.start()
+        logger.info(f"Auto-Scaling enabled: PoolManager + HeartbeatJanitor (interval: {config.HEARTBEAT_INTERVAL}s)")
+
+    # Create LambdaInvoker with optional pool_manager
     lambda_invoker = LambdaInvoker(
         client=client,
         registry=function_registry,
         container_manager=container_manager,
         config=config,
+        pool_manager=pool_manager,  # None if feature flag disabled
     )
     manager_client = ManagerClient(client)
 
@@ -92,13 +189,16 @@ async def lifespan(app: FastAPI):
     app.state.manager_client = manager_client
     app.state.container_manager = container_manager
     app.state.event_builder = V1ProxyEventBuilder()
+    app.state.pool_manager = pool_manager  # May be None
 
     logger.info("Gateway initialized with shared resources.")
 
     yield
 
     # Cleanup
-    logger.info("Gateway shutting down, clicking http client.")
+    if janitor:
+        await janitor.stop()
+    logger.info("Gateway shutting down, closing http client.")
     await client.aclose()
 
 

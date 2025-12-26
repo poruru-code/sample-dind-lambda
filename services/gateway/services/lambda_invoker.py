@@ -9,9 +9,12 @@ import logging
 import json
 import base64
 import httpx
-from typing import Dict
+from typing import Dict, Optional, TYPE_CHECKING
 from services.common.core.request_context import get_trace_id
 from services.gateway.services.function_registry import FunctionRegistry
+
+if TYPE_CHECKING:
+    from .pool_manager import PoolManager
 
 
 from services.gateway.services.container_manager import ContainerManagerProtocol
@@ -34,18 +37,21 @@ class LambdaInvoker:
         registry: FunctionRegistry,
         container_manager: ContainerManagerProtocol,
         config: GatewayConfig,
+        pool_manager: Optional["PoolManager"] = None,
     ):
         """
         Args:
             client: Shared httpx.AsyncClient
             registry: FunctionRegistry instance
-            container_manager: ContainerManagerProtocol instance
+            container_manager: ContainerManagerProtocol instance (legacy mode)
             config: GatewayConfig instance
+            pool_manager: Optional PoolManager for pool-based invocation
         """
         self.client = client
         self.registry = registry
         self.container_manager = container_manager
         self.config = config
+        self.pool_manager = pool_manager
         # 関数名ごとのブレーカーを保持
         self.breakers: Dict[str, CircuitBreaker] = {}
 
@@ -91,15 +97,25 @@ class LambdaInvoker:
 
         logger.debug(f"Passing env to manager for {function_name}: {env}")
 
-        # Ensure container (via Manager)
-        try:
-            host = await self.container_manager.get_lambda_host(
-                function_name=function_name,
-                image=func_config.get("image"),
-                env=env,
-            )
-        except Exception as e:
-            raise ContainerStartError(function_name, e) from e
+        # === POOL MODE vs LEGACY MODE ===
+        worker = None
+        if self.pool_manager is not None:
+            # Pool Mode: acquire worker from PoolManager
+            try:
+                worker = await self.pool_manager.acquire_worker(function_name)
+                host = worker.ip_address
+            except Exception as e:
+                raise ContainerStartError(function_name, e) from e
+        else:
+            # Legacy Mode: use ContainerManager
+            try:
+                host = await self.container_manager.get_lambda_host(
+                    function_name=function_name,
+                    image=func_config.get("image"),
+                    env=env,
+                )
+            except Exception as e:
+                raise ContainerStartError(function_name, e) from e
 
         # POST to Lambda RIE
         rie_url = (
@@ -181,11 +197,26 @@ class LambdaInvoker:
 
                 return response
 
-            return await breaker.call(do_post)
+            result = await breaker.call(do_post)
+
+            # Pool Mode: release worker back to pool on success
+            if worker is not None and self.pool_manager is not None:
+                self.pool_manager.release_worker(function_name, worker)
+
+            return result
 
         except CircuitBreakerOpenError as e:
             logger.error(f"Circuit breaker open for {function_name}: {e}")
+            # Pool Mode: release worker on circuit breaker open (not the worker's fault)
+            if worker is not None and self.pool_manager is not None:
+                self.pool_manager.release_worker(function_name, worker)
             raise LambdaExecutionError(function_name, "Circuit Breaker Open") from e
+        except httpx.ConnectError as e:
+            # Self-Healing: Evict dead worker on connection error
+            logger.warning(f"Connection error to worker, evicting: {e}")
+            if worker is not None and self.pool_manager is not None:
+                self.pool_manager.evict_worker(function_name, worker)
+            raise LambdaExecutionError(function_name, e) from e
         except (httpx.RequestError, httpx.HTTPStatusError) as e:
             logger.error(
                 f"Lambda invocation failed for function '{function_name}'",
@@ -196,7 +227,9 @@ class LambdaInvoker:
                     "error_detail": str(e),
                 },
             )
-            # すでに response.raise_for_status() などで例外になっている場合もここに来る
+            # Pool Mode: release worker on non-connection errors (app-level errors)
+            if worker is not None and self.pool_manager is not None:
+                self.pool_manager.release_worker(function_name, worker)
             raise LambdaExecutionError(function_name, e) from e
 
 
