@@ -65,4 +65,7 @@ testpaths = ["tests", "tools", "services/common/tests", "services/gateway/tests"
 filterwarnings = [
     "ignore::urllib3.exceptions.InsecureRequestWarning",
 ]
+markers = [
+    "slow: marks tests as slow (may take several minutes)",
+]
 

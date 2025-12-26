@@ -1,0 +1,157 @@
+"""
+Scale-to-Zero E2E Tests
+
+Tests container cleanup after idle timeout.
+These tests require specific environment configuration and may take several minutes.
+
+Usage:
+    IDLE_TIMEOUT_MINUTES=1 pytest tests/scenarios/autoscaling/test_scale_to_zero.py -v
+"""
+
+import os
+import subprocess
+import time
+
+import pytest
+from tests.conftest import call_api
+
+
+def get_container_ids(function_name: str) -> list[str]:
+    """Get container IDs for a function name pattern"""
+    cmd = ["docker", "ps", "-q", "-f", f"name=lambda-{function_name}"]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    return result.stdout.strip().splitlines()
+
+
+def get_container_count(function_name: str) -> int:
+    """Get the count of running containers for a function"""
+    return len(get_container_ids(function_name))
+
+
+# Skip this module unless IDLE_TIMEOUT_MINUTES is set to a short value
+IDLE_TIMEOUT_MINUTES = int(os.environ.get("IDLE_TIMEOUT_MINUTES", 5))
+SKIP_REASON = (
+    "Scale-to-zero tests require IDLE_TIMEOUT_MINUTES <= 2. "
+    f"Current value: {IDLE_TIMEOUT_MINUTES}. "
+    "Run with: IDLE_TIMEOUT_MINUTES=1 pytest ..."
+)
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(IDLE_TIMEOUT_MINUTES > 2, reason=SKIP_REASON)
+class TestScaleToZero:
+    """
+    Tests for Scale-to-Zero functionality.
+    
+    These tests verify that containers are automatically cleaned up after
+    being idle for the configured timeout period.
+    
+    IMPORTANT: These tests require:
+    - IDLE_TIMEOUT_MINUTES=1 (or 2) to run in reasonable time
+    - Containers must be in a clean state before running
+    """
+
+    def test_idle_container_cleanup(self, auth_token):
+        """
+        Verify that an idle container is cleaned up after IDLE_TIMEOUT.
+        
+        Steps:
+        1. Invoke Lambda to provision a container
+        2. Verify container is running
+        3. Wait for IDLE_TIMEOUT + buffer
+        4. Verify container is removed
+        """
+        print(f"\n[Scale-to-Zero] Testing with IDLE_TIMEOUT_MINUTES={IDLE_TIMEOUT_MINUTES}")
+
+        # 1. Provision a container
+        print("[Step 1] Invoking Lambda to provision container...")
+        response = call_api("/api/echo", auth_token, {"message": "scale-to-zero-test"})
+        assert response.status_code == 200, f"Lambda invocation failed: {response.text}"
+
+        # 2. Verify container is running
+        time.sleep(2)  # Allow container state to stabilize
+        initial_count = get_container_count("echo")
+        print(f"[Step 2] Container count after invocation: {initial_count}")
+        assert initial_count >= 1, "Container should be running after invocation"
+
+        # 3. Wait for idle timeout
+        # Add 30 seconds buffer for cleanup scheduler delay
+        wait_time = (IDLE_TIMEOUT_MINUTES * 60) + 30
+        print(f"[Step 3] Waiting {wait_time}s for idle timeout and cleanup...")
+        
+        # Poll periodically to detect early cleanup
+        elapsed = 0
+        poll_interval = 15
+        while elapsed < wait_time:
+            time.sleep(poll_interval)
+            elapsed += poll_interval
+            current_count = get_container_count("echo")
+            print(f"  [{elapsed}s] Container count: {current_count}")
+            
+            if current_count == 0:
+                print(f"[Step 4] Container cleaned up after ~{elapsed}s")
+                return  # SUCCESS
+
+        # 4. Final check
+        final_count = get_container_count("echo")
+        print(f"[Step 4] Final container count: {final_count}")
+        
+        assert final_count == 0, (
+            f"Container should be cleaned up after {IDLE_TIMEOUT_MINUTES}m idle. "
+            f"Still running: {final_count} containers"
+        )
+
+    def test_active_container_not_cleaned(self, auth_token):
+        """
+        Verify that containers receiving requests are NOT cleaned up.
+        
+        Steps:
+        1. Invoke Lambda to provision a container
+        2. Send periodic requests to keep it active
+        3. Verify container remains running past IDLE_TIMEOUT
+        """
+        print(f"\n[Active Container] Testing with IDLE_TIMEOUT_MINUTES={IDLE_TIMEOUT_MINUTES}")
+
+        # 1. Provision a container
+        print("[Step 1] Invoking Lambda to provision container...")
+        response = call_api("/api/echo", auth_token, {"message": "active-test-init"})
+        assert response.status_code == 200
+
+        time.sleep(2)
+        initial_ids = get_container_ids("echo")
+        assert len(initial_ids) >= 1, "Container should be running"
+        initial_id = initial_ids[0] if initial_ids else None
+        print(f"[Step 1] Initial container ID: {initial_id}")
+
+        # 2. Keep container active with periodic requests
+        # Wait slightly longer than idle timeout, but send requests every 30s
+        total_wait = (IDLE_TIMEOUT_MINUTES * 60) + 30
+        request_interval = 30
+        elapsed = 0
+
+        print(f"[Step 2] Keeping container active for {total_wait}s...")
+        while elapsed < total_wait:
+            time.sleep(request_interval)
+            elapsed += request_interval
+
+            # Send a keep-alive request
+            response = call_api("/api/echo", auth_token, {"message": f"keepalive-{elapsed}"})
+            current_ids = get_container_ids("echo")
+            
+            print(f"  [{elapsed}s] Request status: {response.status_code}, Containers: {len(current_ids)}")
+            
+            assert response.status_code == 200, "Keep-alive request should succeed"
+            assert len(current_ids) >= 1, "Container should still be running"
+
+        # 3. Final verification
+        final_ids = get_container_ids("echo")
+        print(f"[Step 3] Final container count: {len(final_ids)}")
+        
+        assert len(final_ids) >= 1, "Active container should NOT be cleaned up"
+        
+        # Verify it's the same container (reuse)
+        if initial_id and final_ids:
+            assert initial_id == final_ids[0], (
+                f"Container should be reused, not recreated. "
+                f"Initial: {initial_id}, Final: {final_ids[0]}"
+            )

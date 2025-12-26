@@ -67,13 +67,19 @@ def main():
             "targets": [
                 "tests/scenarios/standard/",
             ],
-            "exclude": [] # No longer needed as directories are separated
+            "exclude": []
         },
         {
             "name": "Auto-Scaling",
             "env_file": "tests/environments/.env.autoscaling",
-            "targets": ["tests/scenarios/autoscaling/"],
-            "exclude": []
+            "targets": [
+                "tests/scenarios/autoscaling/",
+                "tests/scenarios/standard/",  # Standard テストも実行
+            ],
+            # Pool環境で動作が異なるテストを除外
+            "exclude": [
+                "tests/scenarios/standard/test_resilience.py",
+            ]
         }
     ]
 
