@@ -8,6 +8,9 @@ defaults:
     AWS_ACCESS_KEY_ID: "${RUSTFS_ACCESS_KEY}"
     AWS_SECRET_ACCESS_KEY: "${RUSTFS_SECRET_KEY}"
     AWS_DEFAULT_REGION: "ap-northeast-1"
+  scaling:
+    idle_timeout: 300
+    acquire_timeout: 5.0
 
 functions:
 {% for func in functions %}
@@ -16,6 +19,12 @@ functions:
     environment:
       {% for key, value in func.environment.items() %}
       {{ key }}: "{{ value }}"
+      {% endfor %}
+    {% endif %}
+    {% if func.scaling %}
+    scaling:
+      {% for key, value in func.scaling.items() %}
+      {{ key }}: {{ value }}
       {% endfor %}
     {% endif %}
 {% endfor %}

@@ -69,9 +69,31 @@ class TestFunctionsYmlRenderer:
         assert "defaults:" in result
         # Check defaults embedded in template
         assert "GATEWAY_INTERNAL_URL" in result
+        assert "scaling:" in result
+        assert "idle_timeout: 300" in result
         assert "lambda-hello" in result
         assert "lambda-s3-test" in result
         assert "S3_ENDPOINT" in result
+
+    def test_render_functions_yml_with_scaling(self):
+        """関数ごとのスケーリング設定を含むfunctions.ymlを生成できる"""
+        functions = [
+            {
+                "name": "lambda-echo",
+                "environment": {},
+                "scaling": {
+                    "max_capacity": 5,
+                    "min_capacity": 1,
+                }
+            },
+        ]
+
+        result = render_functions_yml(functions)
+
+        assert "lambda-echo:" in result
+        assert "scaling:" in result
+        assert "max_capacity: 5" in result
+        assert "min_capacity: 1" in result
 
     def test_render_routing_yml(self):
         """routing.yml を生成できる"""

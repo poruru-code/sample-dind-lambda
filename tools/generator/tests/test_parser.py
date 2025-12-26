@@ -136,6 +136,28 @@ Resources:
         assert func["events"][0]["path"] == "/api/hello"
         assert func["events"][0]["method"] == "post"
 
+    def test_parse_function_with_scaling(self):
+        """スケーリング設定（SAM標準プロパティ）をパースできる"""
+        sam_content = """
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Resources:
+  EchoFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: lambda-echo
+      ReservedConcurrentExecutions: 5
+      ProvisionedConcurrencyConfig:
+        ProvisionedConcurrentExecutions: 2
+"""
+        result = parse_sam_template(sam_content)
+
+        assert len(result["functions"]) == 1
+        func = result["functions"][0]
+        assert func["scaling"]["max_capacity"] == 5
+        assert func["scaling"]["min_capacity"] == 2
+
     def test_parse_resources(self):
         """DynamoDBとS3リソースをパースできる"""
         sam_content = """

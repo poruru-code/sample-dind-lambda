@@ -114,6 +114,17 @@ def parse_sam_template(content: str, parameters: dict | None = None) -> dict:
                 if path and method:
                     api_routes.append({"path": path, "method": method})
 
+        # --- Phase 1.5: Scaling (SAM Standard) 解析 ---
+        max_capacity = props.get("ReservedConcurrentExecutions")
+        provisioned_config = props.get("ProvisionedConcurrencyConfig", {})
+        min_capacity = provisioned_config.get("ProvisionedConcurrentExecutions")
+
+        scaling_config = {}
+        if max_capacity is not None:
+            scaling_config["max_capacity"] = max_capacity
+        if min_capacity is not None:
+            scaling_config["min_capacity"] = min_capacity
+
         functions.append(
             {
                 "logical_id": logical_id,
@@ -125,6 +136,7 @@ def parse_sam_template(content: str, parameters: dict | None = None) -> dict:
                 "memory_size": props.get("MemorySize", default_memory),
                 "environment": resolved_env,
                 "events": api_routes,
+                "scaling": scaling_config,
             }
         )
 

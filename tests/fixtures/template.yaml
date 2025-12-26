@@ -16,7 +16,7 @@ Resources:
     Type: AWS::Serverless::LayerVersion
     Properties:
       LayerName: common-lib
-      ContentUri: /layers/common/
+      ContentUri: layers/common/
       CompatibleRuntimes:
         - python3.12
 
@@ -24,7 +24,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: lambda-connectivity
-      CodeUri: /functions/connectivity/
+      CodeUri: functions/connectivity/
       Events:
         HelloApi:
           Type: Api
@@ -32,12 +32,11 @@ Resources:
             Path: /api/hello
             Method: post
 
-  # Lambda 連鎖呼び出し (旧 trace-chain -> integration)
   IntegrationFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: lambda-integration
-      CodeUri: /functions/integration/
+      CodeUri: functions/integration/
       Events:
         LambdaApi:
           Type: Api
@@ -45,12 +44,11 @@ Resources:
             Path: /api/lambda
             Method: post
 
-  # S3 互換 API
   S3IntegrationFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: lambda-s3
-      CodeUri: /functions/s3/
+      CodeUri: functions/s3/
       Events:
         S3Api:
           Type: Api
@@ -63,12 +61,11 @@ Resources:
           RUSTFS_ROOT_USER: "rustfsadmin"
           RUSTFS_ROOT_PASSWORD: "rustfsadmin"
 
-  # DynamoDB 互換 API
   DynamoIntegrationFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: lambda-dynamo
-      CodeUri: /functions/dynamo/
+      CodeUri: functions/dynamo/
       Events:
         DynamoApi:
           Type: Api
@@ -79,7 +76,6 @@ Resources:
         Variables:
           DYNAMODB_ENDPOINT: "http://onpre-database:8000"
 
-  # --- Phase 2: Storage & Database リソース定義 ---
   E2ETable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -101,19 +97,23 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: lambda-echo
-      CodeUri: /functions/echo/
+      CodeUri: functions/echo/
+      AutoPublishAlias: live
       Events:
         EchoApi:
           Type: Api
           Properties:
             Path: /api/echo
             Method: post
+      ReservedConcurrentExecutions: 5
+      ProvisionedConcurrencyConfig:
+        ProvisionedConcurrentExecutions: 1
 
   ChaosFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: lambda-chaos
-      CodeUri: /functions/chaos/
+      CodeUri: functions/chaos/
       Events:
         FaultyApi:
           Type: Api

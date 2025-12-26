@@ -29,6 +29,7 @@ Resources:
           Properties:
             Path: /api/hello
             Method: post
+      ReservedConcurrentExecutions: 5
 """
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -38,10 +39,11 @@ Resources:
             sam_path = tmpdir / "template.yaml"
             sam_path.write_text(sam_content, encoding="utf-8")
 
-            # 関数ディレクトリを作成
-            func_dir = tmpdir / "functions" / "hello"
-            func_dir.mkdir(parents=True)
-            (func_dir / "lambda_function.py").write_text(
+            # 関数ディレクトリを作成 (source dir)
+            src_dir = tmpdir / "src"
+            func_src_dir = src_dir / "hello"
+            func_src_dir.mkdir(parents=True)
+            (func_src_dir / "lambda_function.py").write_text(
                 "def lambda_handler(event, context): pass", encoding="utf-8"
             )
 
@@ -56,7 +58,7 @@ Resources:
             config = {
                 "paths": {
                     "sam_template": str(sam_path),
-                    "output_dir": str(tmpdir / "functions"),
+                    "output_dir": str(tmpdir / "out"),
                     "functions_yml": str(tmpdir / "functions.yml"),
                     "routing_yml": str(tmpdir / "routing.yml"),
                 },
@@ -69,8 +71,9 @@ Resources:
             generate_files(config, project_root=tmpdir)
 
             # 検証
-            dockerfile = func_dir / "Dockerfile"
-            assert dockerfile.exists(), "Dockerfile should be generated"
+            # Note: main.py uses output_dir / "functions" / func_name / "Dockerfile"
+            dockerfile = tmpdir / "out" / "functions" / "lambda-hello" / "Dockerfile"
+            assert dockerfile.exists(), f"Dockerfile should be generated at {dockerfile}"
 
             # content = dockerfile.read_text(encoding="utf-8")
             # assert "COPY tools/generator/runtime/sitecustomize.py" in content # Moved to base image
@@ -85,3 +88,8 @@ Resources:
             assert "/api/hello" in routing_content
             assert "POST" in routing_content
             assert "lambda-hello" in routing_content
+
+            functions_content = functions_yml.read_text(encoding="utf-8")
+            assert "scaling:" in functions_content
+            assert "max_capacity: 5" in functions_content
+            assert "idle_timeout: 300" in functions_content
