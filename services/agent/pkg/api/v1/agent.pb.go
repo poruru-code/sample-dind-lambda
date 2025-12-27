@@ -421,6 +421,155 @@ func (x *WorkerInfo) GetPort() int32 {
 	return 0
 }
 
+// Phase 3: ListContainers 用メッセージ
+type ListContainersRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListContainersRequest) Reset() {
+	*x = ListContainersRequest{}
+	mi := &file_agent_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListContainersRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListContainersRequest) ProtoMessage() {}
+
+func (x *ListContainersRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListContainersRequest.ProtoReflect.Descriptor instead.
+func (*ListContainersRequest) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{8}
+}
+
+type ListContainersResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Containers    []*ContainerState      `protobuf:"bytes,1,rep,name=containers,proto3" json:"containers,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListContainersResponse) Reset() {
+	*x = ListContainersResponse{}
+	mi := &file_agent_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListContainersResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListContainersResponse) ProtoMessage() {}
+
+func (x *ListContainersResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListContainersResponse.ProtoReflect.Descriptor instead.
+func (*ListContainersResponse) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ListContainersResponse) GetContainers() []*ContainerState {
+	if x != nil {
+		return x.Containers
+	}
+	return nil
+}
+
+type ContainerState struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ContainerId   string                 `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	FunctionName  string                 `protobuf:"bytes,2,opt,name=function_name,json=functionName,proto3" json:"function_name,omitempty"`
+	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`                              // "RUNNING", "PAUSED", "STOPPED", "UNKNOWN"
+	LastUsedAt    int64                  `protobuf:"varint,4,opt,name=last_used_at,json=lastUsedAt,proto3" json:"last_used_at,omitempty"` // Unix Timestamp (秒)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ContainerState) Reset() {
+	*x = ContainerState{}
+	mi := &file_agent_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ContainerState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ContainerState) ProtoMessage() {}
+
+func (x *ContainerState) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ContainerState.ProtoReflect.Descriptor instead.
+func (*ContainerState) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ContainerState) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
+func (x *ContainerState) GetFunctionName() string {
+	if x != nil {
+		return x.FunctionName
+	}
+	return ""
+}
+
+func (x *ContainerState) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *ContainerState) GetLastUsedAt() int64 {
+	if x != nil {
+		return x.LastUsedAt
+	}
+	return 0
+}
+
 var File_agent_proto protoreflect.FileDescriptor
 
 const file_agent_proto_rawDesc = "" +
@@ -452,12 +601,24 @@ const file_agent_proto_rawDesc = "" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
 	"ip_address\x18\x03 \x01(\tR\tipAddress\x12\x12\n" +
-	"\x04port\x18\x04 \x01(\x05R\x04port2\x81\x03\n" +
+	"\x04port\x18\x04 \x01(\x05R\x04port\"\x17\n" +
+	"\x15ListContainersRequest\"V\n" +
+	"\x16ListContainersResponse\x12<\n" +
+	"\n" +
+	"containers\x18\x01 \x03(\v2\x1c.esb.agent.v1.ContainerStateR\n" +
+	"containers\"\x92\x01\n" +
+	"\x0eContainerState\x12!\n" +
+	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12#\n" +
+	"\rfunction_name\x18\x02 \x01(\tR\ffunctionName\x12\x16\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x12 \n" +
+	"\flast_used_at\x18\x04 \x01(\x03R\n" +
+	"lastUsedAt2\xde\x03\n" +
 	"\fAgentService\x12Q\n" +
 	"\x0fEnsureContainer\x12$.esb.agent.v1.EnsureContainerRequest\x1a\x18.esb.agent.v1.WorkerInfo\x12a\n" +
 	"\x10DestroyContainer\x12%.esb.agent.v1.DestroyContainerRequest\x1a&.esb.agent.v1.DestroyContainerResponse\x12[\n" +
 	"\x0ePauseContainer\x12#.esb.agent.v1.PauseContainerRequest\x1a$.esb.agent.v1.PauseContainerResponse\x12^\n" +
-	"\x0fResumeContainer\x12$.esb.agent.v1.ResumeContainerRequest\x1a%.esb.agent.v1.ResumeContainerResponseBAZ?github.com/poruru/edge-serverless-box/services/agent/pkg/api/v1b\x06proto3"
+	"\x0fResumeContainer\x12$.esb.agent.v1.ResumeContainerRequest\x1a%.esb.agent.v1.ResumeContainerResponse\x12[\n" +
+	"\x0eListContainers\x12#.esb.agent.v1.ListContainersRequest\x1a$.esb.agent.v1.ListContainersResponseBAZ?github.com/poruru/edge-serverless-box/services/agent/pkg/api/v1b\x06proto3"
 
 var (
 	file_agent_proto_rawDescOnce sync.Once
@@ -471,7 +632,7 @@ func file_agent_proto_rawDescGZIP() []byte {
 	return file_agent_proto_rawDescData
 }
 
-var file_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_agent_proto_goTypes = []any{
 	(*PauseContainerRequest)(nil),    // 0: esb.agent.v1.PauseContainerRequest
 	(*PauseContainerResponse)(nil),   // 1: esb.agent.v1.PauseContainerResponse
@@ -481,23 +642,29 @@ var file_agent_proto_goTypes = []any{
 	(*DestroyContainerRequest)(nil),  // 5: esb.agent.v1.DestroyContainerRequest
 	(*DestroyContainerResponse)(nil), // 6: esb.agent.v1.DestroyContainerResponse
 	(*WorkerInfo)(nil),               // 7: esb.agent.v1.WorkerInfo
-	nil,                              // 8: esb.agent.v1.EnsureContainerRequest.EnvEntry
+	(*ListContainersRequest)(nil),    // 8: esb.agent.v1.ListContainersRequest
+	(*ListContainersResponse)(nil),   // 9: esb.agent.v1.ListContainersResponse
+	(*ContainerState)(nil),           // 10: esb.agent.v1.ContainerState
+	nil,                              // 11: esb.agent.v1.EnsureContainerRequest.EnvEntry
 }
 var file_agent_proto_depIdxs = []int32{
-	8, // 0: esb.agent.v1.EnsureContainerRequest.env:type_name -> esb.agent.v1.EnsureContainerRequest.EnvEntry
-	4, // 1: esb.agent.v1.AgentService.EnsureContainer:input_type -> esb.agent.v1.EnsureContainerRequest
-	5, // 2: esb.agent.v1.AgentService.DestroyContainer:input_type -> esb.agent.v1.DestroyContainerRequest
-	0, // 3: esb.agent.v1.AgentService.PauseContainer:input_type -> esb.agent.v1.PauseContainerRequest
-	2, // 4: esb.agent.v1.AgentService.ResumeContainer:input_type -> esb.agent.v1.ResumeContainerRequest
-	7, // 5: esb.agent.v1.AgentService.EnsureContainer:output_type -> esb.agent.v1.WorkerInfo
-	6, // 6: esb.agent.v1.AgentService.DestroyContainer:output_type -> esb.agent.v1.DestroyContainerResponse
-	1, // 7: esb.agent.v1.AgentService.PauseContainer:output_type -> esb.agent.v1.PauseContainerResponse
-	3, // 8: esb.agent.v1.AgentService.ResumeContainer:output_type -> esb.agent.v1.ResumeContainerResponse
-	5, // [5:9] is the sub-list for method output_type
-	1, // [1:5] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	11, // 0: esb.agent.v1.EnsureContainerRequest.env:type_name -> esb.agent.v1.EnsureContainerRequest.EnvEntry
+	10, // 1: esb.agent.v1.ListContainersResponse.containers:type_name -> esb.agent.v1.ContainerState
+	4,  // 2: esb.agent.v1.AgentService.EnsureContainer:input_type -> esb.agent.v1.EnsureContainerRequest
+	5,  // 3: esb.agent.v1.AgentService.DestroyContainer:input_type -> esb.agent.v1.DestroyContainerRequest
+	0,  // 4: esb.agent.v1.AgentService.PauseContainer:input_type -> esb.agent.v1.PauseContainerRequest
+	2,  // 5: esb.agent.v1.AgentService.ResumeContainer:input_type -> esb.agent.v1.ResumeContainerRequest
+	8,  // 6: esb.agent.v1.AgentService.ListContainers:input_type -> esb.agent.v1.ListContainersRequest
+	7,  // 7: esb.agent.v1.AgentService.EnsureContainer:output_type -> esb.agent.v1.WorkerInfo
+	6,  // 8: esb.agent.v1.AgentService.DestroyContainer:output_type -> esb.agent.v1.DestroyContainerResponse
+	1,  // 9: esb.agent.v1.AgentService.PauseContainer:output_type -> esb.agent.v1.PauseContainerResponse
+	3,  // 10: esb.agent.v1.AgentService.ResumeContainer:output_type -> esb.agent.v1.ResumeContainerResponse
+	9,  // 11: esb.agent.v1.AgentService.ListContainers:output_type -> esb.agent.v1.ListContainersResponse
+	7,  // [7:12] is the sub-list for method output_type
+	2,  // [2:7] is the sub-list for method input_type
+	2,  // [2:2] is the sub-list for extension type_name
+	2,  // [2:2] is the sub-list for extension extendee
+	0,  // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_agent_proto_init() }
@@ -511,7 +678,7 @@ func file_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agent_proto_rawDesc), len(file_agent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   9,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

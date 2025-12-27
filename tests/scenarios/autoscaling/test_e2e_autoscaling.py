@@ -1,13 +1,25 @@
 """
 Auto-Scaling E2E Tests
 Tests the Pool behavior, Reuse, and Concurrent Request Handling.
+
+NOTE: These tests require PoolManager mode (USE_GRPC_AGENT=False).
+Go Agent (USE_GRPC_AGENT=True) does not support multi-container scaling.
 """
 
 import concurrent.futures
+import os
 import subprocess
 
 import pytest
 from tests.conftest import call_api
+
+# Skip entire module when using Go Agent (no PoolManager/scaling support)
+USE_GRPC_AGENT = os.environ.get("USE_GRPC_AGENT", "false").lower() == "true"
+pytestmark = pytest.mark.skipif(
+    USE_GRPC_AGENT,
+    reason="Auto-Scaling tests require PoolManager mode (USE_GRPC_AGENT=False). "
+    "Go Agent does not support multi-container scaling.",
+)
 
 
 def get_container_ids(function_name: str) -> list[str]:

@@ -12,8 +12,8 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/go-connections/nat"
-	"github.com/poruru/edge-serverless-box/services/agent/internal/runtime"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/poruru/edge-serverless-box/services/agent/internal/runtime"
 )
 
 // DockerClient defines the subset of Docker API used by Agent.
@@ -163,4 +163,11 @@ func (r *Runtime) Close() error {
 func (r *Runtime) GC(ctx context.Context) error {
 	// No-op for Docker runtime
 	return nil
+}
+
+// List returns the state of all managed containers.
+// Phase 3: Docker runtime returns empty list as per plan (containerd only for now).
+func (r *Runtime) List(ctx context.Context) ([]runtime.ContainerState, error) {
+	// Stub: Docker runtime doesn't implement List for Phase 3
+	return []runtime.ContainerState{}, nil
 }

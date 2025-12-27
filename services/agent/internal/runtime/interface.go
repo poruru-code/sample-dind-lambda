@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"time"
 )
 
 // EnsureRequest represents the parameters for ensuring a container is running.
@@ -18,6 +19,15 @@ type WorkerInfo struct {
 	Port      int // Port used for communication (especially important for containerd NAT)
 }
 
+// ContainerState represents the current state of a managed container.
+// Used by Janitor to determine which containers should be cleaned up.
+type ContainerState struct {
+	ID           string
+	FunctionName string
+	Status       string    // "RUNNING", "PAUSED", "STOPPED", "UNKNOWN"
+	LastUsedAt   time.Time // Last time this container was used
+}
+
 // ContainerRuntime defines the interface for interacting with container backends.
 type ContainerRuntime interface {
 	// Ensure ensures that a container for the given request is running and ready.
@@ -31,6 +41,10 @@ type ContainerRuntime interface {
 
 	// Resume un-suspends a previously paused container.
 	Resume(ctx context.Context, id string) error
+
+	// List returns the state of all managed containers.
+	// Used by Janitor to identify idle or orphan containers.
+	List(ctx context.Context) ([]ContainerState, error)
 
 	// GC performs garbage collection, cleaning up all managed containers and tasks.
 	GC(ctx context.Context) error

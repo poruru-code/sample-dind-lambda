@@ -82,3 +82,24 @@ func (s *AgentServer) ResumeContainer(ctx context.Context, req *pb.ResumeContain
 		Success: true,
 	}, nil
 }
+
+func (s *AgentServer) ListContainers(ctx context.Context, req *pb.ListContainersRequest) (*pb.ListContainersResponse, error) {
+	states, err := s.runtime.List(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to list containers: %v", err)
+	}
+
+	var containers []*pb.ContainerState
+	for _, s := range states {
+		containers = append(containers, &pb.ContainerState{
+			ContainerId:  s.ID,
+			FunctionName: s.FunctionName,
+			Status:       s.Status,
+			LastUsedAt:   s.LastUsedAt.Unix(),
+		})
+	}
+
+	return &pb.ListContainersResponse{
+		Containers: containers,
+	}, nil
+}

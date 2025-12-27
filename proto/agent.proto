@@ -15,6 +15,9 @@ service AgentService {
 
   // コンテナを再開する (Warm Start 用)
   rpc ResumeContainer (ResumeContainerRequest) returns (ResumeContainerResponse);
+
+  // 管理下の全コンテナの状態を取得 (Phase 3: Janitor 用)
+  rpc ListContainers (ListContainersRequest) returns (ListContainersResponse);
 }
 
 message PauseContainerRequest {
@@ -53,4 +56,18 @@ message WorkerInfo {
   string name = 2;
   string ip_address = 3;
   int32 port = 4;
+}
+
+// Phase 3: ListContainers 用メッセージ
+message ListContainersRequest {}
+
+message ListContainersResponse {
+  repeated ContainerState containers = 1;
+}
+
+message ContainerState {
+  string container_id = 1;
+  string function_name = 2;
+  string status = 3;      // "RUNNING", "PAUSED", "STOPPED", "UNKNOWN"
+  int64 last_used_at = 4; // Unix Timestamp (秒)
 }

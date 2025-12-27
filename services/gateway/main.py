@@ -27,7 +27,7 @@ from .services.function_registry import FunctionRegistry
 from .services.route_matcher import RouteMatcher
 from .services.lambda_invoker import LambdaInvoker
 from .services.pool_manager import PoolManager
-from .services.janitor import HeartbeatJanitor
+from .services.janitor import HeartbeatJanitor, ResourceJanitor
 from .services.grpc_backend import GrpcBackend
 from .clients import ProvisionClient, HeartbeatClient
 
@@ -99,10 +99,24 @@ async def lifespan(app: FastAPI):
 
     if config.USE_GRPC_AGENT:
         logger.info(f"Initializing Gateway with Go Agent gRPC Backend: {config.AGENT_GRPC_ADDRESS}")
-        grpc_backend = GrpcBackend(config.AGENT_GRPC_ADDRESS)
+        grpc_backend = GrpcBackend(config.AGENT_GRPC_ADDRESS, function_registry=function_registry)
         invocation_backend = grpc_backend
-        janitor = None
         pool_manager = None  # Phase 1: Direct GrpcBackend bypasses PoolManager
+
+        # Phase 3: ResourceJanitor for gRPC Agent
+        resource_janitor = ResourceJanitor(
+            backend=grpc_backend,
+            idle_timeout=config.GATEWAY_IDLE_TIMEOUT_SECONDS,
+            cleanup_interval=config.HEARTBEAT_INTERVAL,
+        )
+
+        # 1. Startup cleanup (remove orphan Paused containers)
+        await resource_janitor.cleanup_on_startup()
+
+        # 2. Start periodic cleanup loop
+        await resource_janitor.start()
+
+        janitor = None  # HeartbeatJanitor not used for gRPC mode
     else:
         provision_client = ProvisionClient(
             client,
@@ -149,6 +163,7 @@ async def lifespan(app: FastAPI):
     app.state.pool_manager = pool_manager
     if config.USE_GRPC_AGENT:
         app.state.grpc_backend = grpc_backend
+        app.state.resource_janitor = resource_janitor
 
     logger.info("Gateway initialized with shared resources.")
 
@@ -160,6 +175,9 @@ async def lifespan(app: FastAPI):
 
     if pool_manager:
         await pool_manager.shutdown_all()
+
+    if config.USE_GRPC_AGENT and hasattr(app.state, "resource_janitor"):
+        await app.state.resource_janitor.stop()
 
     if config.USE_GRPC_AGENT and hasattr(app.state, "grpc_backend"):
         await app.state.grpc_backend.close()

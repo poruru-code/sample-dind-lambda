@@ -9,7 +9,8 @@ import logging
 import json
 import base64
 import httpx
-from typing import Dict, Optional, Protocol
+from typing import Dict, Optional, Protocol, List
+from dataclasses import dataclass
 from services.common.core.request_context import get_trace_id
 from services.gateway.services.function_registry import FunctionRegistry
 from services.gateway.config import GatewayConfig
@@ -22,11 +23,23 @@ from services.common.models.internal import WorkerInfo
 
 logger = logging.getLogger("gateway.lambda_invoker")
 
+
+@dataclass
+class WorkerState:
+    """Worker state for Janitor inspection"""
+
+    container_id: str
+    function_name: str
+    status: str  # "RUNNING", "PAUSED", "STOPPED", "UNKNOWN"
+    last_used_at: int  # Unix timestamp in seconds
+
+
 class InvocationBackend(Protocol):
     """
     実行バックエンドの抽象インターフェース
     PoolManager (Python) や将来の AgentClient (Go/gRPC) がこれを実装する
     """
+
     async def acquire_worker(self, function_name: str) -> WorkerInfo:
         """関数実行用のワーカーを取得"""
         ...
@@ -38,6 +51,11 @@ class InvocationBackend(Protocol):
     async def evict_worker(self, function_name: str, worker: WorkerInfo) -> None:
         """ワーカーを破棄"""
         ...
+
+    async def list_workers(self) -> List[WorkerState]:
+        """全ワーカーの状態を取得 (Janitor 用)"""
+        ...
+
 
 class LambdaInvoker:
     def __init__(
@@ -86,7 +104,9 @@ class LambdaInvoker:
                 raise ContainerStartError(function_name, e) from e
 
             # 2. POST to Lambda RIE
-            rie_url = f"http://{host}:{self.config.LAMBDA_PORT}/2015-03-31/functions/function/invocations"
+            rie_url = (
+                f"http://{host}:{self.config.LAMBDA_PORT}/2015-03-31/functions/function/invocations"
+            )
             logger.info(f"Invoking {function_name} at {rie_url} (trace_id: {trace_id})")
 
             # 3. ブレーカー経由でリクエスト実行

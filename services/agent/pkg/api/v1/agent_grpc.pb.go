@@ -23,6 +23,7 @@ const (
 	AgentService_DestroyContainer_FullMethodName = "/esb.agent.v1.AgentService/DestroyContainer"
 	AgentService_PauseContainer_FullMethodName   = "/esb.agent.v1.AgentService/PauseContainer"
 	AgentService_ResumeContainer_FullMethodName  = "/esb.agent.v1.AgentService/ResumeContainer"
+	AgentService_ListContainers_FullMethodName   = "/esb.agent.v1.AgentService/ListContainers"
 )
 
 // AgentServiceClient is the client API for AgentService service.
@@ -37,6 +38,8 @@ type AgentServiceClient interface {
 	PauseContainer(ctx context.Context, in *PauseContainerRequest, opts ...grpc.CallOption) (*PauseContainerResponse, error)
 	// コンテナを再開する (Warm Start 用)
 	ResumeContainer(ctx context.Context, in *ResumeContainerRequest, opts ...grpc.CallOption) (*ResumeContainerResponse, error)
+	// 管理下の全コンテナの状態を取得 (Phase 3: Janitor 用)
+	ListContainers(ctx context.Context, in *ListContainersRequest, opts ...grpc.CallOption) (*ListContainersResponse, error)
 }
 
 type agentServiceClient struct {
@@ -87,6 +90,16 @@ func (c *agentServiceClient) ResumeContainer(ctx context.Context, in *ResumeCont
 	return out, nil
 }
 
+func (c *agentServiceClient) ListContainers(ctx context.Context, in *ListContainersRequest, opts ...grpc.CallOption) (*ListContainersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListContainersResponse)
+	err := c.cc.Invoke(ctx, AgentService_ListContainers_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AgentServiceServer is the server API for AgentService service.
 // All implementations must embed UnimplementedAgentServiceServer
 // for forward compatibility.
@@ -99,6 +112,8 @@ type AgentServiceServer interface {
 	PauseContainer(context.Context, *PauseContainerRequest) (*PauseContainerResponse, error)
 	// コンテナを再開する (Warm Start 用)
 	ResumeContainer(context.Context, *ResumeContainerRequest) (*ResumeContainerResponse, error)
+	// 管理下の全コンテナの状態を取得 (Phase 3: Janitor 用)
+	ListContainers(context.Context, *ListContainersRequest) (*ListContainersResponse, error)
 	mustEmbedUnimplementedAgentServiceServer()
 }
 
@@ -120,6 +135,9 @@ func (UnimplementedAgentServiceServer) PauseContainer(context.Context, *PauseCon
 }
 func (UnimplementedAgentServiceServer) ResumeContainer(context.Context, *ResumeContainerRequest) (*ResumeContainerResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ResumeContainer not implemented")
+}
+func (UnimplementedAgentServiceServer) ListContainers(context.Context, *ListContainersRequest) (*ListContainersResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListContainers not implemented")
 }
 func (UnimplementedAgentServiceServer) mustEmbedUnimplementedAgentServiceServer() {}
 func (UnimplementedAgentServiceServer) testEmbeddedByValue()                      {}
@@ -214,6 +232,24 @@ func _AgentService_ResumeContainer_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AgentService_ListContainers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListContainersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).ListContainers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_ListContainers_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).ListContainers(ctx, req.(*ListContainersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AgentService_ServiceDesc is the grpc.ServiceDesc for AgentService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -236,6 +272,10 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ResumeContainer",
 			Handler:    _AgentService_ResumeContainer_Handler,
+		},
+		{
+			MethodName: "ListContainers",
+			Handler:    _AgentService_ListContainers_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

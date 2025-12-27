@@ -4,6 +4,9 @@ Scale-to-Zero E2E Tests
 Tests container cleanup after idle timeout.
 These tests require specific environment configuration and may take several minutes.
 
+NOTE: These tests require PoolManager mode (USE_GRPC_AGENT=False).
+Go Agent uses ResourceJanitor for idle cleanup, tested separately.
+
 Usage:
     IDLE_TIMEOUT_MINUTES=1 pytest tests/scenarios/autoscaling/test_scale_to_zero.py -v
 """
@@ -14,6 +17,14 @@ import time
 
 import pytest
 from tests.conftest import call_api
+
+# Skip entire module when using Go Agent (ResourceJanitor handles cleanup differently)
+USE_GRPC_AGENT = os.environ.get("USE_GRPC_AGENT", "false").lower() == "true"
+pytestmark = pytest.mark.skipif(
+    USE_GRPC_AGENT,
+    reason="Scale-to-Zero tests require PoolManager mode (USE_GRPC_AGENT=False). "
+    "Go Agent uses ResourceJanitor for idle cleanup.",
+)
 
 
 def get_container_ids(function_name: str) -> list[str]:

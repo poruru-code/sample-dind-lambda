@@ -162,8 +162,8 @@ services:
   agent:
     image: esb-agent:latest
     build:
-      context: .
-      dockerfile: services/agent/Dockerfile
+      context: services/agent
+      dockerfile: Dockerfile
     container_name: esb-agent
     privileged: true
     networks:

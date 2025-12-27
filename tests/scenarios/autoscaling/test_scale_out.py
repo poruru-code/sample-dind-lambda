@@ -4,6 +4,9 @@ Scale-Out E2E Tests
 Tests that verify multiple containers are spawned when MAX_CAPACITY > 1.
 These tests require DEFAULT_MAX_CAPACITY > 1 to be meaningful.
 
+NOTE: These tests require PoolManager mode (USE_GRPC_AGENT=False).
+Go Agent does not support multi-container scaling.
+
 Usage:
     DEFAULT_MAX_CAPACITY=3 pytest tests/scenarios/autoscaling/test_scale_out.py -v
 """
@@ -15,6 +18,14 @@ import time
 
 import pytest
 from tests.conftest import call_api
+
+# Skip entire module when using Go Agent (no PoolManager/scaling support)
+USE_GRPC_AGENT = os.environ.get("USE_GRPC_AGENT", "false").lower() == "true"
+pytestmark = pytest.mark.skipif(
+    USE_GRPC_AGENT,
+    reason="Scale-Out tests require PoolManager mode (USE_GRPC_AGENT=False). "
+    "Go Agent does not support multi-container scaling.",
+)
 
 
 def get_container_ids(function_name: str) -> list[str]:
